@@ -1,0 +1,38 @@
+# Event Ledger repository ignores
+
+# Claude Code: local-only settings and instructions
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Secrets and environment values
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+secrets/
+**/secrets/
+*.pem
+*.key
+
+# Maven and Java build output
+target/
+**/target/
+.m2/
+*.log
+
+# Embedded H2 runtime files (runtime/Compose data is never source)
+*.mv.db
+*.trace.db
+**/data/*.mv.db
+**/data/*.trace.db
+
+# IDE and OS state
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+.DS_Store
