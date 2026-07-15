@@ -15,11 +15,34 @@
     <description>Test-only module: real two-service Gateway to Account acceptance flow (no production artifact)</description>
 
     <dependencies>
-        <!-- Service thin-JAR test dependencies are added with the cross-service suite (T-401) -->
+        <dependency>
+            <groupId>com.eventledger</groupId>
+            <artifactId>account-service</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.eventledger</groupId>
+            <artifactId>event-gateway</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <failIfNoTests>true</failIfNoTests>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
