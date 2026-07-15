@@ -16,6 +16,13 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  http:
+    clients:
+      imperative:
+        factory: http-components
+      connect-timeout: 300ms
+      read-timeout: 800ms
+      redirects: dont-follow
 
 clients:
   account:

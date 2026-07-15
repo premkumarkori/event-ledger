@@ -1,11 +1,10 @@
 package com.eventledger.gateway.config;
 
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.http.client.HttpComponentsClientHttpRequestFactoryBuilder;
+import org.springframework.boot.http.client.autoconfigure.ClientHttpRequestFactoryBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 @Configuration(proxyBeanMethods = false)
@@ -13,21 +12,14 @@ import org.springframework.web.client.RestClient;
 public class AccountClientConfiguration {
 
     @Bean
-    CloseableHttpClient accountHttpClient() {
-        return HttpClients.custom()
-                .disableAutomaticRetries()
-                .build();
+    ClientHttpRequestFactoryBuilderCustomizer<HttpComponentsClientHttpRequestFactoryBuilder>
+            disableApacheAutomaticRetries() {
+        return builder -> builder.withHttpClientCustomizer(
+                httpClientBuilder -> httpClientBuilder.disableAutomaticRetries());
     }
 
     @Bean
-    RestClient accountRestClient(RestClient.Builder builder,
-                                 AccountClientProperties properties,
-                                 CloseableHttpClient accountHttpClient) {
-        HttpComponentsClientHttpRequestFactory requestFactory =
-                new HttpComponentsClientHttpRequestFactory(accountHttpClient);
-        return builder
-                .baseUrl(properties.baseUrl().toString())
-                .requestFactory(requestFactory)
-                .build();
+    RestClient accountRestClient(RestClient.Builder builder, AccountClientProperties properties) {
+        return builder.baseUrl(properties.baseUrl().toString()).build();
     }
 }
