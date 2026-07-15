@@ -1,0 +1,372 @@
+openapi: 3.1.0
+info:
+  title: Account Service API
+  version: 0.1.0
+  description: >
+    Internal service of the Event Ledger. Owns the immutable transaction
+    journal, enforces idempotency by eventId, establishes one currency per
+    account, and derives balances from the journal. Called only by the Event
+    Gateway; not published to the host in the default runtime. This is the
+    frozen target contract; controller-to-contract conformance is verified by
+    a separate review task.
+servers:
+  - url: http://account-service:8081
+    description: Private Compose network address
+
+paths:
+  /accounts/{accountId}/transactions:
+    post:
+      operationId: applyTransaction
+      summary: Apply a transaction to an account
+      description: >
+        Atomically inserts a new immutable transaction or returns the existing
+        identical one. The account identifier comes only from the path and is
+        part of the semantic idempotency comparison. The first applied
+        transaction establishes the account currency.
+      parameters:
+        - $ref: '#/components/parameters/AccountIdPath'
+        - $ref: '#/components/parameters/Traceparent'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyTransactionRequest'
+            example:
+              eventId: evt-001
+              type: CREDIT
+              amount: 150.00
+              currency: USD
+              eventTimestamp: '2026-05-15T14:02:11Z'
+      responses:
+        '201':
+          description: First insertion of this eventId.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppliedTransaction'
+              example:
+                eventId: evt-001
+                accountId: acct-123
+                type: CREDIT
+                amount: 150.00
+                currency: USD
+                eventTimestamp: '2026-05-15T14:02:11Z'
+                appliedAt: '2026-07-14T16:00:00.100Z'
+        '200':
+          description: >
+            An identical transaction already exists; the stored transaction is
+            returned and no second financial effect occurs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppliedTransaction'
+        '400':
+          $ref: '#/components/responses/ValidationProblem'
+        '409':
+          description: >
+            The eventId exists with different account/type/amount/currency/time
+            values (urn:event-ledger:problem:idempotency-conflict), or the
+            account already has a different established currency
+            (urn:event-ledger:problem:currency-conflict). Nothing is inserted.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ConflictProblemDetail'
+              example:
+                type: 'urn:event-ledger:problem:currency-conflict'
+                title: Account currency conflict
+                status: 409
+                detail: account acct-123 is established in USD and cannot accept EUR
+                instance: /accounts/acct-123/transactions
+                traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
+  /accounts/{accountId}/balance:
+    get:
+      operationId: getAccountBalance
+      summary: Get the current balance
+      parameters:
+        - $ref: '#/components/parameters/AccountIdPath'
+        - $ref: '#/components/parameters/Traceparent'
+      responses:
+        '200':
+          description: Derived balance in the account's established currency.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+              example:
+                accountId: acct-123
+                currency: USD
+                balance: 125.50
+                asOf: '2026-07-14T16:05:00Z'
+        '404':
+          $ref: '#/components/responses/NotFoundProblem'
+  /accounts/{accountId}:
+    get:
+      operationId: getAccountDetails
+      summary: Get account details and recent transactions
+      parameters:
+        - $ref: '#/components/parameters/AccountIdPath'
+        - $ref: '#/components/parameters/Traceparent'
+      responses:
+        '200':
+          description: >
+            Account identity, established currency, derived balance, and the
+            newest transactions ordered by eventTimestamp descending, then
+            eventId descending.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetails'
+              example:
+                accountId: acct-123
+                currency: USD
+                balance: 125.50
+                recentTransactions:
+                  - eventId: evt-002
+                    type: DEBIT
+                    amount: 24.50
+                    eventTimestamp: '2026-05-16T10:00:00Z'
+        '404':
+          $ref: '#/components/responses/NotFoundProblem'
+  /health:
+    get:
+      operationId: getAccountHealth
+      summary: Account Service health
+      responses:
+        '200':
+          description: Service and its database are healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountHealth'
+              example:
+                status: UP
+                service: account-service
+                checks:
+                  database: UP
+        '503':
+          description: The database diagnostic failed; status is DOWN.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountHealth'
+
+components:
+  parameters:
+    AccountIdPath:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Identifier'
+    Traceparent:
+      name: traceparent
+      in: header
+      required: false
+      description: W3C trace context propagated by the Event Gateway; continued when present.
+      schema:
+        type: string
+        pattern: '^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$'
+  responses:
+    ValidationProblem:
+      description: Defensive input validation failed; the rejected fields are named. Nothing was inserted.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblemDetail'
+          example:
+            type: 'urn:event-ledger:problem:validation'
+            title: Validation failed
+            status: 400
+            detail: Request has 1 invalid field
+            instance: /accounts/acct-123/transactions
+            traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
+            errors:
+              - field: amount
+                message: must be greater than 0
+    NotFoundProblem:
+      description: No account with applied transactions matches the identifier (urn:event-ledger:problem:not-found).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+  schemas:
+    Identifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+      description: Case-sensitive URL-safe identifier; no whitespace or path/query delimiters.
+    EventType:
+      type: string
+      enum: [CREDIT, DEBIT]
+    Amount:
+      type: number
+      format: decimal
+      exclusiveMinimum: 0
+      description: >
+        Positive exact decimal. The schema cannot prove decimal(38,18) /
+        BigDecimal representability; the application rejects amounts that do
+        not fit without rounding.
+    Currency:
+      type: string
+      pattern: '^[A-Za-z]{3}$'
+      description: >
+        Exactly three ASCII letters. The application normalizes to uppercase
+        and rejects codes not recognized by Java Currency lookup; the schema
+        alone cannot prove a recognized code.
+    ApplyTransactionRequest:
+      type: object
+      required: [eventId, type, amount, currency, eventTimestamp]
+      description: The target account comes from the path and is not repeated in the body.
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          $ref: '#/components/schemas/EventType'
+        amount:
+          $ref: '#/components/schemas/Amount'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        eventTimestamp:
+          type: string
+          format: date-time
+    AppliedTransaction:
+      type: object
+      required: [eventId, accountId, type, amount, currency, eventTimestamp, appliedAt]
+      description: >
+        The stored immutable transaction. No balanceAfter field: a later
+        transaction changes the current balance, so recomputing it could not
+        reproduce the original response on replay.
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Identifier'
+        accountId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          $ref: '#/components/schemas/EventType'
+        amount:
+          $ref: '#/components/schemas/Amount'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        eventTimestamp:
+          type: string
+          format: date-time
+        appliedAt:
+          type: string
+          format: date-time
+    BalanceResponse:
+      type: object
+      required: [accountId, currency, balance, asOf]
+      properties:
+        accountId:
+          $ref: '#/components/schemas/Identifier'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balance:
+          type: number
+          format: decimal
+          description: Sum of credits minus debits; may be negative.
+        asOf:
+          type: string
+          format: date-time
+          description: Response generation time, not a stored ledger snapshot time.
+    TransactionSummary:
+      type: object
+      required: [eventId, type, amount, eventTimestamp]
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          $ref: '#/components/schemas/EventType'
+        amount:
+          $ref: '#/components/schemas/Amount'
+        eventTimestamp:
+          type: string
+          format: date-time
+    AccountDetails:
+      type: object
+      required: [accountId, currency, balance, recentTransactions]
+      properties:
+        accountId:
+          $ref: '#/components/schemas/Identifier'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balance:
+          type: number
+          format: decimal
+          description: Sum of credits minus debits; may be negative.
+        recentTransactions:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/TransactionSummary'
+          description: Newest first, ordered by eventTimestamp descending, then eventId descending.
+    AccountHealth:
+      type: object
+      required: [status, service, checks]
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN]
+        service:
+          type: string
+          const: account-service
+        checks:
+          type: object
+          required: [database]
+          properties:
+            database:
+              type: string
+              enum: [UP, DOWN]
+    ProblemDetail:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          description: 'Stable identifier under urn:event-ledger:problem:* (validation, not-found, idempotency-conflict, currency-conflict, internal).'
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+          description: Sanitized summary; never stack traces, SQL errors, or internal exception text.
+        instance:
+          type: string
+        traceId:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+    ValidationProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          required: [errors]
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+              description: Names each rejected field; rejected financial values are not echoed.
+    ConflictProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          required: [type, status]
+          properties:
+            type:
+              type: string
+              enum:
+                - 'urn:event-ledger:problem:idempotency-conflict'
+                - 'urn:event-ledger:problem:currency-conflict'
+            status:
+              type: integer
+              const: 409

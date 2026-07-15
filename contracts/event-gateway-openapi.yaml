@@ -1,0 +1,537 @@
+openapi: 3.1.0
+info:
+  title: Event Gateway API
+  version: 0.1.0
+  description: >
+    Public entry point of the Event Ledger. Accepts financial transaction
+    events, enforces idempotency by eventId, serves stored-event queries from
+    its own database, and proxies the account balance. This is the frozen
+    target contract; controller-to-contract conformance is verified by a
+    separate review task.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /events:
+    post:
+      operationId: submitEvent
+      summary: Submit a transaction event
+      description: >
+        Validates and stores the event, then synchronously asks the Account
+        Service to apply it. Replaying an identical payload with a known
+        eventId is safe; reusing an eventId with a different payload is a
+        conflict.
+      parameters:
+        - $ref: '#/components/parameters/Traceparent'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventRequest'
+            example:
+              eventId: evt-001
+              accountId: acct-123
+              type: CREDIT
+              amount: 150.00
+              currency: USD
+              eventTimestamp: '2026-05-15T14:02:11Z'
+              metadata:
+                source: batch
+                batchId: B-9042
+      responses:
+        '201':
+          description: New event stored and its application confirmed by the Account Service.
+          headers:
+            Location:
+              description: Path of the stored event.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoredEvent'
+              example:
+                eventId: evt-001
+                accountId: acct-123
+                type: CREDIT
+                amount: 150.00
+                currency: USD
+                eventTimestamp: '2026-05-15T14:02:11Z'
+                metadata:
+                  source: batch
+                  batchId: B-9042
+                applicationStatus: APPLIED
+                receivedAt: '2026-07-14T16:00:00Z'
+                appliedAt: '2026-07-14T16:00:00.120Z'
+        '200':
+          description: >
+            Identical replay of a known eventId: the stored representation is
+            returned and no second financial effect occurs. Also used when a
+            retry of an unconfirmed event completes safe recovery.
+          headers:
+            X-Idempotent-Replay:
+              description: Always "true" on an idempotent replay response.
+              required: true
+              schema:
+                type: string
+                enum: ['true']
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoredEvent'
+        '400':
+          $ref: '#/components/responses/ValidationProblem'
+        '409':
+          description: >
+            The eventId was reused with a different normalized payload
+            (urn:event-ledger:problem:idempotency-conflict), or the Account
+            Service reported a deterministic account-currency conflict
+            (urn:event-ledger:problem:currency-conflict).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ConflictProblemDetail'
+              example:
+                type: 'urn:event-ledger:problem:idempotency-conflict'
+                title: Event identifier conflict
+                status: 409
+                detail: eventId evt-001 already belongs to a different event payload
+                instance: /events
+                traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
+        '502':
+          description: >
+            The Account Service rejected the internal request or returned an
+            invalid response, meaning the internal service contract is broken
+            (urn:event-ledger:problem:downstream-contract). No downstream
+            exception text is exposed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '503':
+          $ref: '#/components/responses/EventApplicationUnavailable'
+    get:
+      operationId: listAccountEvents
+      summary: List events for an account
+      description: >
+        Returns a JSON array ordered by eventTimestamp ascending, then eventId
+        ascending. Arrival order never changes the returned chronology. An
+        unknown account yields an empty array. Available while the Account
+        Service is down.
+      parameters:
+        - name: account
+          in: query
+          required: true
+          description: Account identifier to list events for.
+          schema:
+            $ref: '#/components/schemas/Identifier'
+        - $ref: '#/components/parameters/Traceparent'
+      responses:
+        '200':
+          description: Chronologically ordered events for the account.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventListItem'
+              example:
+                - eventId: evt-early
+                  eventTimestamp: '2026-05-01T00:00:00Z'
+                  applicationStatus: APPLIED
+                - eventId: evt-late
+                  eventTimestamp: '2026-05-02T00:00:00Z'
+                  applicationStatus: APPLIED
+        '400':
+          $ref: '#/components/responses/ValidationProblem'
+  /events/{eventId}:
+    get:
+      operationId: getEventById
+      summary: Get one stored event
+      parameters:
+        - $ref: '#/components/parameters/EventIdPath'
+        - $ref: '#/components/parameters/Traceparent'
+      responses:
+        '200':
+          description: >
+            The stored event, in any applicationStatus (RECEIVED, APPLIED, or
+            APPLY_FAILED). Available while the Account Service is down.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoredEvent'
+        '404':
+          $ref: '#/components/responses/NotFoundProblem'
+  /accounts/{accountId}/balance:
+    get:
+      operationId: proxyAccountBalance
+      summary: Get an account balance (proxied)
+      description: >
+        Proxies the internal Account Service balance so clients keep one entry
+        point. When the Account Service is unavailable this endpoint degrades
+        with the same 503 problem class as the write path.
+      parameters:
+        - $ref: '#/components/parameters/AccountIdPath'
+        - $ref: '#/components/parameters/Traceparent'
+      responses:
+        '200':
+          description: Balance proxied from the Account Service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+              example:
+                accountId: acct-123
+                currency: USD
+                balance: 125.50
+                asOf: '2026-07-14T16:05:00Z'
+        '404':
+          $ref: '#/components/responses/NotFoundProblem'
+        '503':
+          $ref: '#/components/responses/AccountQueryUnavailable'
+  /health:
+    get:
+      operationId: getGatewayHealth
+      summary: Gateway health
+      description: >
+        Local database health controls availability. An Account Service outage
+        degrades the report without failing it; the accountService and
+        circuitBreaker checks reflect the last observed state, not a live
+        remote probe.
+      responses:
+        '200':
+          description: Gateway is UP, or DEGRADED because of dependency state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayHealth'
+              example:
+                status: DEGRADED
+                service: event-gateway
+                checks:
+                  database: UP
+                  accountService: UNAVAILABLE
+                  circuitBreaker: OPEN
+        '503':
+          description: The Gateway's own database check failed; status is DOWN.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayHealth'
+
+components:
+  parameters:
+    EventIdPath:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Identifier'
+    AccountIdPath:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Identifier'
+    Traceparent:
+      name: traceparent
+      in: header
+      required: false
+      description: >
+        W3C trace context. When present it is continued, not replaced; when
+        absent the Gateway starts a new trace.
+      schema:
+        type: string
+        pattern: '^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$'
+  headers:
+    XTraceId:
+      description: Trace identifier echoed for demo/support correlation; W3C traceparent remains the propagation contract.
+      required: false
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+    RetryAfter:
+      description: Suggested wait, in seconds, before retrying the same eventId.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    ValidationProblem:
+      description: Validation failed; the rejected fields are named. Nothing was stored and no downstream call was made.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblemDetail'
+          example:
+            type: 'urn:event-ledger:problem:validation'
+            title: Validation failed
+            status: 400
+            detail: Request has 2 invalid fields
+            instance: /events
+            traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
+            errors:
+              - field: amount
+                message: must be greater than 0
+              - field: type
+                message: must be CREDIT or DEBIT
+    NotFoundProblem:
+      description: No stored resource matches the identifier (urn:event-ledger:problem:not-found).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    EventApplicationUnavailable:
+      description: >
+        The Account Service outcome could not be confirmed (timeout, connection
+        failure, retryable 5xx, or open circuit). Retrying the same eventId is
+        safe.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/EventApplicationUnavailableProblemDetail'
+          example:
+            type: 'urn:event-ledger:problem:account-unavailable'
+            title: Account Service unavailable
+            status: 503
+            detail: Application of event evt-002 could not be confirmed. Retrying the same eventId is safe.
+            instance: /events
+            traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
+            eventId: evt-002
+            applicationStatus: APPLY_FAILED
+    AccountQueryUnavailable:
+      description: The Account Service is unavailable, so the balance cannot be retrieved.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/AccountServiceUnavailableProblemDetail'
+          example:
+            type: 'urn:event-ledger:problem:account-unavailable'
+            title: Account Service unavailable
+            status: 503
+            detail: Account balance is temporarily unavailable.
+            instance: /accounts/acct-123/balance
+            traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
+  schemas:
+    Identifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+      description: Case-sensitive URL-safe identifier; no whitespace or path/query delimiters.
+    EventType:
+      type: string
+      enum: [CREDIT, DEBIT]
+    Amount:
+      type: number
+      format: decimal
+      exclusiveMinimum: 0
+      description: >
+        Positive exact decimal. The schema cannot prove decimal(38,18) /
+        BigDecimal representability; the application rejects amounts that do
+        not fit without rounding.
+    Currency:
+      type: string
+      pattern: '^[A-Za-z]{3}$'
+      description: >
+        Exactly three ASCII letters. The application normalizes to uppercase
+        and rejects codes not recognized by Java Currency lookup; the schema
+        alone cannot prove a recognized code.
+    Metadata:
+      type: object
+      additionalProperties: true
+      description: >
+        Caller context stored as a JSON object. A top-level scalar or array is
+        rejected.
+    ApplicationStatus:
+      type: string
+      enum: [RECEIVED, APPLIED, APPLY_FAILED]
+      description: >
+        RECEIVED = stored, application not yet confirmed; APPLIED = confirmed
+        (terminal); APPLY_FAILED = not confirmed successful, retryability
+        depends on the stored failure classification.
+    EventRequest:
+      type: object
+      required: [eventId, accountId, type, amount, currency, eventTimestamp]
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Identifier'
+        accountId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          $ref: '#/components/schemas/EventType'
+        amount:
+          $ref: '#/components/schemas/Amount'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        eventTimestamp:
+          type: string
+          format: date-time
+        metadata:
+          oneOf:
+            - $ref: '#/components/schemas/Metadata'
+            - type: 'null'
+          default: {}
+          description: Missing or null metadata is normalized to an empty object.
+    StoredEvent:
+      type: object
+      required: [eventId, accountId, type, amount, currency, eventTimestamp, metadata, applicationStatus, receivedAt]
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Identifier'
+        accountId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          $ref: '#/components/schemas/EventType'
+        amount:
+          $ref: '#/components/schemas/Amount'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        eventTimestamp:
+          type: string
+          format: date-time
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        applicationStatus:
+          $ref: '#/components/schemas/ApplicationStatus'
+        receivedAt:
+          type: string
+          format: date-time
+          description: Gateway ingestion time; diagnostics only, never used for ordering.
+        appliedAt:
+          type: string
+          format: date-time
+          description: Present only after application was confirmed.
+    EventListItem:
+      type: object
+      required: [eventId, eventTimestamp, applicationStatus]
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Identifier'
+        eventTimestamp:
+          type: string
+          format: date-time
+        applicationStatus:
+          $ref: '#/components/schemas/ApplicationStatus'
+    BalanceResponse:
+      type: object
+      required: [accountId, currency, balance, asOf]
+      properties:
+        accountId:
+          $ref: '#/components/schemas/Identifier'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balance:
+          type: number
+          format: decimal
+          description: Sum of credits minus debits; may be negative.
+        asOf:
+          type: string
+          format: date-time
+          description: Response generation time, not a stored ledger snapshot time.
+    GatewayHealth:
+      type: object
+      required: [status, service, checks]
+      properties:
+        status:
+          type: string
+          enum: [UP, DEGRADED, DOWN]
+        service:
+          type: string
+          const: event-gateway
+        checks:
+          type: object
+          required: [database]
+          properties:
+            database:
+              type: string
+              enum: [UP, DOWN]
+            accountService:
+              type: string
+              enum: [UP, UNAVAILABLE, UNKNOWN]
+              description: Last observed dependency state; UNKNOWN before any observation.
+            circuitBreaker:
+              type: string
+              enum: [CLOSED, OPEN, HALF_OPEN, UNKNOWN]
+    ProblemDetail:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          description: 'Stable identifier under urn:event-ledger:problem:* (validation, not-found, idempotency-conflict, currency-conflict, downstream-contract, account-unavailable, internal).'
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+          description: Sanitized summary; never metadata, stack traces, SQL errors, or downstream exception text.
+        instance:
+          type: string
+        traceId:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+    ValidationProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          required: [errors]
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+              description: Names each rejected field; rejected financial values are not echoed.
+    ConflictProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          required: [type, status]
+          properties:
+            type:
+              type: string
+              enum:
+                - 'urn:event-ledger:problem:idempotency-conflict'
+                - 'urn:event-ledger:problem:currency-conflict'
+            status:
+              type: integer
+              const: 409
+    AccountServiceUnavailableProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          required: [type, status]
+          properties:
+            type:
+              type: string
+              const: 'urn:event-ledger:problem:account-unavailable'
+            status:
+              type: integer
+              const: 503
+    EventApplicationUnavailableProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/AccountServiceUnavailableProblemDetail'
+        - type: object
+          required: [eventId, applicationStatus]
+          properties:
+            eventId:
+              $ref: '#/components/schemas/Identifier'
+            applicationStatus:
+              type: string
+              const: APPLY_FAILED
