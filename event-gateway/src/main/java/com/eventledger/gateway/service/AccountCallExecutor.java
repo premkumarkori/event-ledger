@@ -5,11 +5,17 @@ import com.eventledger.gateway.client.AccountBalanceResponse;
 import com.eventledger.gateway.client.AccountClient;
 import com.eventledger.gateway.client.AccountClientRequest;
 import com.eventledger.gateway.client.AccountInfrastructureException;
+import com.eventledger.gateway.error.AccountNotFoundException;
 import com.eventledger.gateway.error.AccountQueryUnavailableException;
+import com.eventledger.gateway.error.DownstreamContractException;
+import com.eventledger.gateway.health.AccountDependencyState;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.springframework.cloud.client.circuitbreaker.CircuitBreaker;
 import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
 import org.springframework.stereotype.Component;
+
+import java.time.Clock;
+import java.util.function.Supplier;
 
 @Component
 public class AccountCallExecutor {
@@ -18,23 +24,43 @@ public class AccountCallExecutor {
 
     private final AccountClient accountClient;
     private final CircuitBreaker accountCircuit;
+    private final AccountDependencyState dependencyState;
+    private final Clock clock;
 
     public AccountCallExecutor(AccountClient accountClient,
-                               CircuitBreakerFactory<?, ?> circuitBreakerFactory) {
+                               CircuitBreakerFactory<?, ?> circuitBreakerFactory,
+                               AccountDependencyState dependencyState,
+                               Clock clock) {
         this.accountClient = accountClient;
         this.accountCircuit = circuitBreakerFactory.create(ACCOUNT_SERVICE_CIRCUIT);
+        this.dependencyState = dependencyState;
+        this.clock = clock;
     }
 
     public AccountApplyOutcome apply(String accountId, AccountClientRequest request) {
         return accountCircuit.run(
-                () -> accountClient.apply(accountId, request),
+                () -> callAccount(() -> accountClient.apply(accountId, request)),
                 this::mapApplyFailure);
     }
 
     public AccountBalanceResponse getBalance(String accountId) {
         return accountCircuit.run(
-                () -> accountClient.getBalance(accountId),
+                () -> callAccount(() -> accountClient.getBalance(accountId)),
                 this::mapBalanceFailure);
+    }
+
+    private <T> T callAccount(Supplier<T> call) {
+        try {
+            T response = call.get();
+            dependencyState.recordAvailable(clock.instant());
+            return response;
+        } catch (AccountInfrastructureException failure) {
+            dependencyState.recordUnavailable(clock.instant());
+            throw failure;
+        } catch (AccountNotFoundException | DownstreamContractException confirmedResponse) {
+            dependencyState.recordAvailable(clock.instant());
+            throw confirmedResponse;
+        }
     }
 
     private AccountApplyOutcome mapApplyFailure(Throwable failure) {

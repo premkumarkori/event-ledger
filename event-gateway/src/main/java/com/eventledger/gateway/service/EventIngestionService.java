@@ -10,6 +10,8 @@ import com.eventledger.gateway.error.AccountUnavailableException;
 import com.eventledger.gateway.error.CurrencyConflictException;
 import com.eventledger.gateway.error.DownstreamContractException;
 import com.eventledger.gateway.error.IdempotencyConflictException;
+import com.eventledger.gateway.metrics.EventOutcome;
+import com.eventledger.gateway.metrics.EventOutcomeMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.spi.LoggingEventBuilder;
@@ -29,17 +31,20 @@ public class EventIngestionService {
     private final EventStatusWriter statusWriter;
     private final EventEquality equality;
     private final AccountCallExecutor accountCallExecutor;
+    private final EventOutcomeMetrics outcomeMetrics;
 
     public EventIngestionService(EventWriter eventWriter,
                                  EventReader eventReader,
                                  EventStatusWriter statusWriter,
                                  EventEquality equality,
-                                 AccountCallExecutor accountCallExecutor) {
+                                 AccountCallExecutor accountCallExecutor,
+                                 EventOutcomeMetrics outcomeMetrics) {
         this.eventWriter = eventWriter;
         this.eventReader = eventReader;
         this.statusWriter = statusWriter;
         this.equality = equality;
         this.accountCallExecutor = accountCallExecutor;
+        this.outcomeMetrics = outcomeMetrics;
     }
 
     public EventSubmissionResult submit(NormalizedEvent event) {
@@ -55,20 +60,24 @@ public class EventIngestionService {
         StoredEvent existing = eventReader.find(event.eventId()).orElseThrow(() ->
                 new IllegalStateException("insert collision without a stored event"));
         if (!equality.sameBusinessInstruction(existing, event)) {
+            outcomeMetrics.increment(EventOutcome.CONFLICT);
             logOutcome("conflict", existing.applicationStatus());
             throw new IdempotencyConflictException(event.eventId());
         }
         return switch (recoveryDecision(existing)) {
             case REPLAY_APPLIED -> {
+                outcomeMetrics.increment(EventOutcome.REPLAYED);
                 logOutcome("replayed", existing.applicationStatus());
                 yield new EventSubmissionResult(existing, false);
             }
             case RECOVER -> applyThroughAccount(event, false);
             case RETAINED_TERMINAL_CONFLICT -> {
+                outcomeMetrics.increment(EventOutcome.CONFLICT);
                 logStoredFailure("conflict", existing);
                 throw retainedConflict(existing);
             }
             case RETAINED_CONTRACT_ERROR -> {
+                outcomeMetrics.increment(EventOutcome.APPLY_FAILED);
                 logStoredFailure("apply_failed", existing);
                 throw new DownstreamContractException();
             }
@@ -101,28 +110,39 @@ public class EventIngestionService {
             case TERMINAL_CONFLICT -> {
                 statusWriter.markFailed(event.eventId(),
                         LastFailureCode.TERMINAL_CONFLICT, conflictToken(outcome));
+                outcomeMetrics.increment(EventOutcome.CONFLICT);
                 logFailure("conflict", LastFailureCode.TERMINAL_CONFLICT);
                 throw conflictFor(outcome.conflictType(), event.eventId());
             }
             case CONTRACT_ERROR -> {
                 statusWriter.markFailed(event.eventId(),
                         LastFailureCode.CONTRACT_ERROR, "downstream contract error");
-                logFailure("apply_failed", LastFailureCode.CONTRACT_ERROR);
+                recordApplyFailedIfDurable(event.eventId(), LastFailureCode.CONTRACT_ERROR);
                 throw new DownstreamContractException();
             }
             case RETRYABLE_UNCONFIRMED -> {
                 statusWriter.markFailed(event.eventId(),
                         LastFailureCode.RETRYABLE_UNCONFIRMED, "outcome not confirmed");
-                logFailure("apply_failed", LastFailureCode.RETRYABLE_UNCONFIRMED);
+                recordApplyFailedIfDurable(event.eventId(), LastFailureCode.RETRYABLE_UNCONFIRMED);
                 throw new AccountUnavailableException(event.eventId());
             }
         };
+    }
+
+    private void recordApplyFailedIfDurable(String eventId, LastFailureCode failureCode) {
+        StoredEvent stored = eventReader.find(eventId).orElseThrow(() ->
+                new IllegalStateException("failed event vanished before reload"));
+        logFailure("apply_failed", failureCode);
+        if (stored.applicationStatus() == ApplicationStatus.APPLY_FAILED) {
+            outcomeMetrics.increment(EventOutcome.APPLY_FAILED);
+        }
     }
 
     private EventSubmissionResult confirm(String eventId, boolean created) {
         statusWriter.markApplied(eventId);
         StoredEvent applied = eventReader.find(eventId).orElseThrow(() ->
                 new IllegalStateException("applied event vanished before reload"));
+        outcomeMetrics.increment(created ? EventOutcome.CREATED : EventOutcome.REPLAYED);
         logOutcome(created ? "created" : "replayed", applied.applicationStatus());
         return new EventSubmissionResult(applied, created);
     }

@@ -58,3 +58,13 @@ logging:
   structured:
     format:
       console: ecs
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
