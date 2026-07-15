@@ -53,3 +53,8 @@ resilience4j:
 clients:
   account:
     base-url: http://localhost:8081
+
+logging:
+  structured:
+    format:
+      console: ecs

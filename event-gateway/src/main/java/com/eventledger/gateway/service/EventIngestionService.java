@@ -2,6 +2,7 @@ package com.eventledger.gateway.service;
 
 import com.eventledger.gateway.client.AccountApplyOutcome;
 import com.eventledger.gateway.client.AccountClientRequest;
+import com.eventledger.gateway.domain.ApplicationStatus;
 import com.eventledger.gateway.domain.LastFailureCode;
 import com.eventledger.gateway.domain.NormalizedEvent;
 import com.eventledger.gateway.domain.StoredEvent;
@@ -9,12 +10,17 @@ import com.eventledger.gateway.error.AccountUnavailableException;
 import com.eventledger.gateway.error.CurrencyConflictException;
 import com.eventledger.gateway.error.DownstreamContractException;
 import com.eventledger.gateway.error.IdempotencyConflictException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 @Service
 public class EventIngestionService {
 
+    private static final Logger log = LoggerFactory.getLogger(EventIngestionService.class);
+    private static final String OUTCOME_MESSAGE = "Event ingestion completed";
     private static final String IDEMPOTENCY_TOKEN = "idempotency-conflict";
     private static final String CURRENCY_TOKEN = "currency-conflict";
 
@@ -49,13 +55,23 @@ public class EventIngestionService {
         StoredEvent existing = eventReader.find(event.eventId()).orElseThrow(() ->
                 new IllegalStateException("insert collision without a stored event"));
         if (!equality.sameBusinessInstruction(existing, event)) {
+            logOutcome("conflict", existing.applicationStatus());
             throw new IdempotencyConflictException(event.eventId());
         }
         return switch (recoveryDecision(existing)) {
-            case REPLAY_APPLIED -> new EventSubmissionResult(existing, false);
+            case REPLAY_APPLIED -> {
+                logOutcome("replayed", existing.applicationStatus());
+                yield new EventSubmissionResult(existing, false);
+            }
             case RECOVER -> applyThroughAccount(event, false);
-            case RETAINED_TERMINAL_CONFLICT -> throw retainedConflict(existing);
-            case RETAINED_CONTRACT_ERROR -> throw new DownstreamContractException();
+            case RETAINED_TERMINAL_CONFLICT -> {
+                logStoredFailure("conflict", existing);
+                throw retainedConflict(existing);
+            }
+            case RETAINED_CONTRACT_ERROR -> {
+                logStoredFailure("apply_failed", existing);
+                throw new DownstreamContractException();
+            }
         };
     }
 
@@ -85,16 +101,19 @@ public class EventIngestionService {
             case TERMINAL_CONFLICT -> {
                 statusWriter.markFailed(event.eventId(),
                         LastFailureCode.TERMINAL_CONFLICT, conflictToken(outcome));
+                logFailure("conflict", LastFailureCode.TERMINAL_CONFLICT);
                 throw conflictFor(outcome.conflictType(), event.eventId());
             }
             case CONTRACT_ERROR -> {
                 statusWriter.markFailed(event.eventId(),
                         LastFailureCode.CONTRACT_ERROR, "downstream contract error");
+                logFailure("apply_failed", LastFailureCode.CONTRACT_ERROR);
                 throw new DownstreamContractException();
             }
             case RETRYABLE_UNCONFIRMED -> {
                 statusWriter.markFailed(event.eventId(),
                         LastFailureCode.RETRYABLE_UNCONFIRMED, "outcome not confirmed");
+                logFailure("apply_failed", LastFailureCode.RETRYABLE_UNCONFIRMED);
                 throw new AccountUnavailableException(event.eventId());
             }
         };
@@ -104,7 +123,33 @@ public class EventIngestionService {
         statusWriter.markApplied(eventId);
         StoredEvent applied = eventReader.find(eventId).orElseThrow(() ->
                 new IllegalStateException("applied event vanished before reload"));
+        logOutcome(created ? "created" : "replayed", applied.applicationStatus());
         return new EventSubmissionResult(applied, created);
+    }
+
+    private void logOutcome(String outcome, ApplicationStatus status) {
+        outcomeLog(outcome)
+                .addKeyValue("applicationStatus", status.name())
+                .log(OUTCOME_MESSAGE);
+    }
+
+    private void logFailure(String outcome, LastFailureCode failureCode) {
+        outcomeLog(outcome)
+                .addKeyValue("failureCode", failureCode.name())
+                .log(OUTCOME_MESSAGE);
+    }
+
+    private void logStoredFailure(String outcome, StoredEvent event) {
+        LoggingEventBuilder entry = outcomeLog(outcome)
+                .addKeyValue("applicationStatus", event.applicationStatus().name());
+        if (event.lastFailureCode() != null) {
+            entry = entry.addKeyValue("failureCode", event.lastFailureCode().name());
+        }
+        entry.log(OUTCOME_MESSAGE);
+    }
+
+    private LoggingEventBuilder outcomeLog(String outcome) {
+        return log.atInfo().addKeyValue("outcome", outcome);
     }
 
     private AccountClientRequest toAccountRequest(NormalizedEvent event) {

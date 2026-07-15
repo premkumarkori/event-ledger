@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -30,7 +32,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class AccountTransactionServiceTest {
 
     private static final Instant EVENT_TIME = Instant.parse("2026-05-15T14:02:11Z");
@@ -132,7 +134,7 @@ class AccountTransactionServiceTest {
     }
 
     @Test
-    void applyTransaction_shouldThrowRaceErrorWithCause_whenBoundedRetryFails() {
+    void applyTransaction_shouldLogFailureAndThrowRaceError_whenBoundedRetryFails(CapturedOutput output) {
         DataIntegrityViolationException secondFailure =
                 new DataIntegrityViolationException("second collision");
         doThrow(new DataIntegrityViolationException("first collision"))
@@ -146,6 +148,10 @@ class AccountTransactionServiceTest {
                 .isInstanceOf(AccountRaceDidNotConvergeException.class)
                 .hasCause(secondFailure);
         verify(writer, times(2)).applyOnce(any());
+        assertThat(output)
+                .contains("Account transaction completed")
+                .contains("outcome")
+                .contains("\"FAILED\"");
     }
 
 }
