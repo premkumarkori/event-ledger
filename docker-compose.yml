@@ -1,0 +1,33 @@
+services:
+  account-service:
+    build:
+      context: .
+      dockerfile: account-service/Dockerfile
+    image: event-ledger/account-service:local
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:h2:file:/data/account/account-service;AUTO_SERVER=FALSE"
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+      MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED: "false"
+    volumes:
+      - account-data:/data/account
+    expose:
+      - "8081"
+
+  event-gateway:
+    build:
+      context: .
+      dockerfile: event-gateway/Dockerfile
+    image: event-ledger/event-gateway:local
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:h2:file:/data/gateway/event-gateway;AUTO_SERVER=FALSE"
+      CLIENTS_ACCOUNT_BASE_URL: "http://account-service:8081"
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+      MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED: "false"
+    volumes:
+      - gateway-data:/data/gateway
+    ports:
+      - "${GATEWAY_HOST_PORT:-8080}:8080"
+
+volumes:
+  account-data:
+  gateway-data:
