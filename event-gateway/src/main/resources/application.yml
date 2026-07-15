@@ -8,10 +8,14 @@ spring:
     url: jdbc:h2:file:./runtime-data/gateway/event-gateway;AUTO_SERVER=FALSE
     username: sa
     password: ""
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:/db/gateway/schema.sql
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: none
+      ddl-auto: validate
 
 clients:
   account:
