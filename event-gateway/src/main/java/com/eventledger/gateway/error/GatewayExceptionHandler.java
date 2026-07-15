@@ -3,6 +3,7 @@ package com.eventledger.gateway.error;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -46,6 +47,65 @@ public class GatewayExceptionHandler {
                 List.of(Map.of("field", unreadableField(exception),
                         "message", "is malformed or contains a value with an invalid format")),
                 request);
+    }
+
+    @ExceptionHandler(EventNotFoundException.class)
+    public ProblemDetail handleEventNotFound(HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND, "The requested event does not exist");
+        problem.setType(URI.create("urn:event-ledger:problem:not-found"));
+        problem.setTitle("Event not found");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ProblemDetail handleIdempotencyConflict(HttpServletRequest request) {
+        return conflictProblem("urn:event-ledger:problem:idempotency-conflict",
+                "Event identifier conflict",
+                "The eventId already belongs to a different event", request);
+    }
+
+    @ExceptionHandler(CurrencyConflictException.class)
+    public ProblemDetail handleCurrencyConflict(HttpServletRequest request) {
+        return conflictProblem("urn:event-ledger:problem:currency-conflict",
+                "Account currency conflict",
+                "The event conflicts with the established account currency", request);
+    }
+
+    @ExceptionHandler(DownstreamContractException.class)
+    public ProblemDetail handleDownstreamContract(HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_GATEWAY, "The Account Service returned an invalid response");
+        problem.setType(URI.create("urn:event-ledger:problem:downstream-contract"));
+        problem.setTitle("Account Service contract error");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+
+    @ExceptionHandler(AccountUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleAccountUnavailable(
+            AccountUnavailableException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
+                "Application of event " + exception.getEventId()
+                        + " could not be confirmed. Retrying the same eventId is safe.");
+        problem.setType(URI.create("urn:event-ledger:problem:account-unavailable"));
+        problem.setTitle("Account Service unavailable");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("eventId", exception.getEventId());
+        problem.setProperty("applicationStatus", "APPLY_FAILED");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "5")
+                .body(problem);
+    }
+
+    private ProblemDetail conflictProblem(
+            String type, String title, String detail, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
+        problem.setType(URI.create(type));
+        problem.setTitle(title);
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
     }
 
     private String unreadableField(HttpMessageNotReadableException exception) {

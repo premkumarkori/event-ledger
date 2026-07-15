@@ -17,25 +17,25 @@ import java.util.regex.Pattern;
 @Component
 public class EventNormalizer {
 
-    private static final Pattern IDENTIFIER_PATTERN =
-            Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$");
     private static final Pattern CURRENCY_PATTERN = Pattern.compile("[A-Za-z]{3}");
     private static final int MAX_INTEGER_DIGITS = 20;
     private static final int MAX_FRACTION_DIGITS = 18;
     private static final String EMPTY_OBJECT = "{}";
 
     private final JsonMapper jsonMapper;
+    private final EventIdentifierValidator identifierValidator;
 
-    public EventNormalizer(JsonMapper jsonMapper) {
+    public EventNormalizer(JsonMapper jsonMapper, EventIdentifierValidator identifierValidator) {
         this.jsonMapper = jsonMapper;
+        this.identifierValidator = identifierValidator;
     }
 
     public NormalizedEvent normalize(EventRequest request) {
         if (request == null) {
             throw new FieldValidationException("requestBody", "is required");
         }
-        requireIdentifier("eventId", request.eventId());
-        requireIdentifier("accountId", request.accountId());
+        identifierValidator.requireValid("eventId", request.eventId());
+        identifierValidator.requireValid("accountId", request.accountId());
         requireType(request.type());
         requireRepresentableAmount(request.amount());
         String currency = normalizeCurrency(request.currency());
@@ -50,13 +50,6 @@ public class EventNormalizer {
                 currency,
                 request.eventTimestamp(),
                 metadata);
-    }
-
-    private void requireIdentifier(String field, String value) {
-        if (value == null || !IDENTIFIER_PATTERN.matcher(value).matches()) {
-            throw new FieldValidationException(field,
-                    "must be a URL-safe identifier of at most 128 characters");
-        }
     }
 
     private void requireType(EventType type) {

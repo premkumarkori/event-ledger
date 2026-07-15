@@ -4,9 +4,13 @@ import com.eventledger.gateway.api.EventRequest;
 import com.eventledger.gateway.domain.EventType;
 import com.eventledger.gateway.domain.NormalizedEvent;
 import com.eventledger.gateway.error.FieldValidationException;
+import com.eventledger.gateway.persistence.EventRepository;
 import com.eventledger.gateway.service.EventNormalizer;
-import jakarta.validation.Valid;
+import com.eventledger.gateway.support.MutableTestClock;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -15,11 +19,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.http.ResponseEntity;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -33,6 +36,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
@@ -40,30 +48,31 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 @ActiveProfiles("test")
 class EventRequestValidationTest {
 
+    private static final String ACCOUNT_PATH = "/accounts/acct-1/transactions";
     private static final Instant EVENT_TIME = Instant.parse("2026-05-15T14:02:11Z");
+    private static final Instant RECEIVED_AT = Instant.parse("2026-07-15T09:00:00Z");
+    private static final Instant ACCOUNT_APPLIED_AT = Instant.parse("2026-07-14T16:00:05Z");
 
-    @RestController
-    static class ValidationProbeController {
+    private static final WireMockServer account = new WireMockServer(options().dynamicPort());
 
-        private final EventNormalizer normalizer;
+    @DynamicPropertySource
+    static void accountBaseUrl(DynamicPropertyRegistry registry) {
+        account.start();
+        registry.add("clients.account.base-url", () -> "http://localhost:" + account.port());
+    }
 
-        ValidationProbeController(EventNormalizer normalizer) {
-            this.normalizer = normalizer;
-        }
-
-        @PostMapping("/test/validation/events")
-        ResponseEntity<Void> validate(@Valid @RequestBody EventRequest request) {
-            normalizer.normalize(request);
-            return ResponseEntity.ok().build();
-        }
+    @AfterAll
+    static void stopAccount() {
+        account.stop();
     }
 
     @TestConfiguration
-    static class ProbeConfiguration {
+    static class TestClockConfiguration {
 
         @Bean
-        ValidationProbeController validationProbeController(EventNormalizer normalizer) {
-            return new ValidationProbeController(normalizer);
+        @Primary
+        MutableTestClock testClock() {
+            return new MutableTestClock(RECEIVED_AT);
         }
     }
 
@@ -74,11 +83,20 @@ class EventRequestValidationTest {
     private EventNormalizer normalizer;
 
     @Autowired
+    private EventRepository events;
+
+    @Autowired
     private JsonMapper jsonMapper;
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
+
+    @BeforeEach
+    void reset() {
+        account.resetAll();
+        events.deleteAll();
+    }
 
     private JsonNode json(String text) {
         return jsonMapper.readTree(text);
@@ -216,17 +234,21 @@ class EventRequestValidationTest {
     }
 
     @Test
-    void validate_shouldReturn200_whenRequestValid() throws Exception {
-        HttpResponse<String> response = post("""
+    void submitEvent_shouldReturn201_whenRequestValid() throws Exception {
+        stubAccountApplied();
+
+        HttpResponse<String> response = submit("""
                 {"eventId":"evt-1","accountId":"acct-1","type":"CREDIT","amount":150.00,
                  "currency":"USD","eventTimestamp":"2026-05-15T14:02:11Z","metadata":{"source":"batch"}}""");
 
-        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.statusCode()).isEqualTo(201);
+        assertThat(events.count()).isEqualTo(1);
+        assertThat(accountRequestCount()).isEqualTo(1);
     }
 
     @Test
-    void validate_shouldReturn400ProblemDetailNamingField_whenBeanValidationFails() throws Exception {
-        HttpResponse<String> response = post("""
+    void submitEvent_shouldReturn400ProblemDetailNamingField_whenBeanValidationFails() throws Exception {
+        HttpResponse<String> response = submit("""
                 {"eventId":"","accountId":"acct-1","type":"CREDIT","amount":150.00,
                  "currency":"USD","eventTimestamp":"2026-05-15T14:02:11Z","metadata":{}}""");
 
@@ -238,11 +260,12 @@ class EventRequestValidationTest {
         assertThat(body.path("status").asInt()).isEqualTo(400);
         assertThat(body.path("errors").isArray()).isTrue();
         assertThat(fieldNames(body)).contains("eventId");
+        assertNoWriteOrCall();
     }
 
     @Test
-    void validate_shouldNotEchoRejectedValues_whenAmountOversizedAndMetadataSecret() throws Exception {
-        HttpResponse<String> response = post("""
+    void submitEvent_shouldNotEchoRejectedValues_whenAmountOversizedAndMetadataSecret() throws Exception {
+        HttpResponse<String> response = submit("""
                 {"eventId":"evt-1","accountId":"acct-1","type":"CREDIT","amount":123456789012345678901,
                  "currency":"USD","eventTimestamp":"2026-05-15T14:02:11Z","metadata":{"secret":"TOP-SECRET-9999"}}""");
 
@@ -252,11 +275,12 @@ class EventRequestValidationTest {
         assertThat(fieldNames(body)).contains("amount");
         assertThat(response.body()).doesNotContain("123456789012345678901");
         assertThat(response.body()).doesNotContain("TOP-SECRET-9999");
+        assertNoWriteOrCall();
     }
 
     @Test
-    void validate_shouldReturn400ProblemDetailNamingType_whenTypeUnknown() throws Exception {
-        HttpResponse<String> response = post("""
+    void submitEvent_shouldReturn400ProblemDetailNamingType_whenTypeUnknown() throws Exception {
+        HttpResponse<String> response = submit("""
                 {"eventId":"evt-1","accountId":"acct-1","type":"TRANSFER","amount":150.00,
                  "currency":"USD","eventTimestamp":"2026-05-15T14:02:11Z","metadata":{}}""");
 
@@ -264,36 +288,60 @@ class EventRequestValidationTest {
         JsonNode body = json(response.body());
         assertThat(body.path("type").asString()).isEqualTo("urn:event-ledger:problem:validation");
         assertThat(fieldNames(body)).containsExactly("type");
+        assertNoWriteOrCall();
     }
 
     @Test
-    void validate_shouldReturn400ProblemDetailNamingTimestamp_whenTimestampInvalid() throws Exception {
-        HttpResponse<String> response = post("""
+    void submitEvent_shouldReturn400ProblemDetailNamingTimestamp_whenTimestampInvalid() throws Exception {
+        HttpResponse<String> response = submit("""
                 {"eventId":"evt-1","accountId":"acct-1","type":"CREDIT","amount":150.00,
                  "currency":"USD","eventTimestamp":"not-a-timestamp","metadata":{}}""");
 
         assertThat(response.statusCode()).isEqualTo(400);
         assertThat(fieldNames(json(response.body()))).containsExactly("eventTimestamp");
+        assertNoWriteOrCall();
     }
 
     @Test
-    void validate_shouldReturn400ProblemDetailNamingRequestBody_whenJsonMalformed() throws Exception {
-        HttpResponse<String> response = post("{ this is not json ");
+    void submitEvent_shouldReturn400ProblemDetailNamingRequestBody_whenJsonMalformed() throws Exception {
+        HttpResponse<String> response = submit("{ this is not json ");
 
         assertThat(response.statusCode()).isEqualTo(400);
         JsonNode body = json(response.body());
         assertThat(body.path("type").asString()).isEqualTo("urn:event-ledger:problem:validation");
         assertThat(fieldNames(body)).containsExactly("requestBody");
+        assertNoWriteOrCall();
     }
 
     @Test
-    void validate_shouldReturn400ProblemDetailNamingMetadata_whenMetadataIsArray() throws Exception {
-        HttpResponse<String> response = post("""
+    void submitEvent_shouldReturn400ProblemDetailNamingMetadata_whenMetadataIsArray() throws Exception {
+        HttpResponse<String> response = submit("""
                 {"eventId":"evt-1","accountId":"acct-1","type":"CREDIT","amount":150.00,
                  "currency":"USD","eventTimestamp":"2026-05-15T14:02:11Z","metadata":[1,2,3]}""");
 
         assertThat(response.statusCode()).isEqualTo(400);
         assertThat(fieldNames(json(response.body()))).contains("metadata");
+        assertNoWriteOrCall();
+    }
+
+    private void assertNoWriteOrCall() {
+        assertThat(events.count()).isZero();
+        assertThat(accountRequestCount()).isZero();
+    }
+
+    private void stubAccountApplied() {
+        account.stubFor(post(urlEqualTo(ACCOUNT_PATH)).willReturn(aResponse()
+                .withStatus(201)
+                .withHeader("Content-Type", "application/json")
+                .withBody("""
+                        {"eventId":"evt-1","accountId":"acct-1","type":"CREDIT","amount":150.00,
+                         "currency":"USD","eventTimestamp":"%s","appliedAt":"%s"}"""
+                        .formatted(EVENT_TIME, ACCOUNT_APPLIED_AT))));
+    }
+
+    private int accountRequestCount() {
+        return account.countRequestsMatching(postRequestedFor(urlEqualTo(ACCOUNT_PATH)).build())
+                .getCount();
     }
 
     private List<String> fieldNames(JsonNode problem) {
@@ -302,9 +350,9 @@ class EventRequestValidationTest {
         return names;
     }
 
-    private HttpResponse<String> post(String body) throws Exception {
+    private HttpResponse<String> submit(String body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(
-                        URI.create("http://localhost:" + port + "/test/validation/events"))
+                        URI.create("http://localhost:" + port + "/events"))
                 .header("Content-Type", "application/json")
                 .timeout(Duration.ofSeconds(5))
                 .POST(HttpRequest.BodyPublishers.ofString(body))

@@ -7,8 +7,11 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.List;
 
 public interface EventRepository extends JpaRepository<StoredEventEntity, String> {
+
+    List<StoredEventEntity> findByAccountIdOrderByEventTimestampAscEventIdAsc(String accountId);
 
     @Modifying(clearAutomatically = true)
     @Query("""

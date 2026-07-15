@@ -6,6 +6,7 @@ import com.eventledger.gateway.domain.EventType;
 import com.eventledger.gateway.domain.NormalizedEvent;
 import com.eventledger.gateway.domain.StoredEvent;
 import com.eventledger.gateway.service.EventEquality;
+import com.eventledger.gateway.service.EventIdentifierValidator;
 import com.eventledger.gateway.service.EventNormalizer;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.DeserializationFeature;
@@ -24,7 +25,8 @@ class EventSemanticEqualityTest {
             .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
             .build();
     private final EventEquality equality = new EventEquality(jsonMapper);
-    private final EventNormalizer normalizer = new EventNormalizer(jsonMapper);
+    private final EventNormalizer normalizer =
+            new EventNormalizer(jsonMapper, new EventIdentifierValidator());
 
     private StoredEvent stored(String accountId, EventType type, String amount,
                                String currency, Instant eventTime, String metadata) {
