@@ -191,8 +191,19 @@ paths:
                 currency: USD
                 balance: 125.50
                 asOf: '2026-07-14T16:05:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationProblem'
         '404':
           $ref: '#/components/responses/NotFoundProblem'
+        '502':
+          description: >
+            The Account Service returned an invalid or unexpected response
+            (urn:event-ledger:problem:downstream-contract). No downstream
+            payload or exception detail is exposed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '503':
           $ref: '#/components/responses/AccountQueryUnavailable'
   /health:

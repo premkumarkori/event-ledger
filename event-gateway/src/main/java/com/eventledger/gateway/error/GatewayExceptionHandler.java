@@ -59,6 +59,26 @@ public class GatewayExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(AccountNotFoundException.class)
+    public ProblemDetail handleAccountNotFound(HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND, "The requested account does not exist");
+        problem.setType(URI.create("urn:event-ledger:problem:not-found"));
+        problem.setTitle("Account not found");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+
+    @ExceptionHandler(AccountQueryUnavailableException.class)
+    public ProblemDetail handleAccountQueryUnavailable(HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.SERVICE_UNAVAILABLE, "Account balance is temporarily unavailable.");
+        problem.setType(URI.create("urn:event-ledger:problem:account-unavailable"));
+        problem.setTitle("Account Service unavailable");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+
     @ExceptionHandler(IdempotencyConflictException.class)
     public ProblemDetail handleIdempotencyConflict(HttpServletRequest request) {
         return conflictProblem("urn:event-ledger:problem:idempotency-conflict",

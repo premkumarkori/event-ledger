@@ -1,5 +1,8 @@
 package com.eventledger.gateway.client;
 
+import com.eventledger.gateway.error.AccountNotFoundException;
+import com.eventledger.gateway.error.AccountQueryUnavailableException;
+import com.eventledger.gateway.error.DownstreamContractException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +41,58 @@ public class AccountClient {
             return AccountApplyOutcome.retryableUnconfirmed();
         }
         return classify(accountId, request, response.getStatusCode(), response.getBody());
+    }
+
+    public AccountBalanceResponse getBalance(String accountId) {
+        ResponseEntity<String> response;
+        try {
+            response = accountRestClient.get()
+                    .uri("/accounts/{accountId}/balance", accountId)
+                    .retrieve()
+                    .onStatus(status -> true, (ignoredRequest, ignoredResponse) -> {
+                    })
+                    .toEntity(String.class);
+        } catch (ResourceAccessException transportFailure) {
+            throw new AccountQueryUnavailableException();
+        }
+        return classifyBalance(accountId, response.getStatusCode(), response.getBody());
+    }
+
+    private AccountBalanceResponse classifyBalance(
+            String accountId, HttpStatusCode status, String body) {
+        int code = status.value();
+        if (code == 200) {
+            AccountBalanceResponse parsed = readBalance(body);
+            if (parsed == null || !matchesBalanceQuery(accountId, parsed)) {
+                throw new DownstreamContractException();
+            }
+            return parsed;
+        }
+        if (code == 404) {
+            throw new AccountNotFoundException();
+        }
+        if (status.is5xxServerError()) {
+            throw new AccountQueryUnavailableException();
+        }
+        throw new DownstreamContractException();
+    }
+
+    private boolean matchesBalanceQuery(String accountId, AccountBalanceResponse response) {
+        return accountId.equals(response.accountId())
+                && response.currency() != null
+                && response.balance() != null
+                && response.asOf() != null;
+    }
+
+    private AccountBalanceResponse readBalance(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            return jsonMapper.readValue(body, AccountBalanceResponse.class);
+        } catch (JacksonException malformed) {
+            return null;
+        }
     }
 
     private AccountApplyOutcome classify(
