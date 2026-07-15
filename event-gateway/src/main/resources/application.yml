@@ -29,6 +29,7 @@ spring:
         resilience4j:
           enabled: false
       resilience4j:
+        disable-thread-pool: true
         disable-time-limiter-map:
           accountService: true
 

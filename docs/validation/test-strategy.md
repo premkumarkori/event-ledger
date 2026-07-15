@@ -185,10 +185,12 @@ Do not use an arbitrary sleep as concurrency coordination.
 
 - Capture an Account request and validate `traceparent` against
   `^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$` (`NFR-010`).
-- On Boot 4.1, add the focused OpenTelemetry test support and use
-  `@AutoConfigureTracing(export = false)` (or verified equivalent) because
-  reporting trace components are not automatically active in ordinary
-  `@SpringBootTest`; the propagation test must not require a live collector.
+- On Boot 4.1, add the focused OpenTelemetry test support, use
+  `@AutoConfigureTracing`, and disable only the OTLP exporter with
+  `management.tracing.export.otlp.enabled=false`. The annotation's
+  `export=false` option also disables W3C propagation in Boot 4.1. Reporting
+  trace components are not automatically active in an ordinary
+  `@SpringBootTest`, and the propagation test must not require a live collector.
 - Capture one log event from each service and parse it as JSON. Assert timestamp,
   level, service, trace ID during a request, and message (`NFR-011`).
 - Assert logs do not contain metadata values, authorization headers, or complete

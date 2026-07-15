@@ -95,9 +95,10 @@ class CircuitBreakerTest {
     }
 
     @Test
-    void accountCircuit_shouldDisableTimeLimiterAndBulkhead_whenUsingBlockingHttpClient() {
+    void accountCircuit_shouldUseOnlyHttpTimeout_whenCallingAccount() {
         assertThat(circuitBreakerProperties.getDisableTimeLimiterMap())
                 .containsEntry(ACCOUNT_SERVICE_CIRCUIT, true);
+        assertThat(circuitBreakerProperties.isDisableThreadPool()).isTrue();
         assertThat(applicationContext.getBeansOfType(Resilience4jBulkheadProvider.class))
                 .isEmpty();
     }

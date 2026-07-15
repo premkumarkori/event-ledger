@@ -4,6 +4,14 @@ spring:
     username: sa
     password: ""
 
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      otlp:
+        enabled: false
+
 resilience4j:
   circuitbreaker:
     instances:
