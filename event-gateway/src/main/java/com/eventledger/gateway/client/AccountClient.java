@@ -1,7 +1,6 @@
 package com.eventledger.gateway.client;
 
 import com.eventledger.gateway.error.AccountNotFoundException;
-import com.eventledger.gateway.error.AccountQueryUnavailableException;
 import com.eventledger.gateway.error.DownstreamContractException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -38,7 +37,7 @@ public class AccountClient {
                     })
                     .toEntity(String.class);
         } catch (ResourceAccessException transportFailure) {
-            return AccountApplyOutcome.retryableUnconfirmed();
+            throw new AccountInfrastructureException(transportFailure);
         }
         return classify(accountId, request, response.getStatusCode(), response.getBody());
     }
@@ -53,7 +52,7 @@ public class AccountClient {
                     })
                     .toEntity(String.class);
         } catch (ResourceAccessException transportFailure) {
-            throw new AccountQueryUnavailableException();
+            throw new AccountInfrastructureException(transportFailure);
         }
         return classifyBalance(accountId, response.getStatusCode(), response.getBody());
     }
@@ -72,7 +71,7 @@ public class AccountClient {
             throw new AccountNotFoundException();
         }
         if (status.is5xxServerError()) {
-            throw new AccountQueryUnavailableException();
+            throw new AccountInfrastructureException();
         }
         throw new DownstreamContractException();
     }
@@ -105,7 +104,7 @@ public class AccountClient {
             return classifyConflict(body);
         }
         if (status.is5xxServerError()) {
-            return AccountApplyOutcome.retryableUnconfirmed();
+            throw new AccountInfrastructureException();
         }
         return AccountApplyOutcome.contractError();
     }

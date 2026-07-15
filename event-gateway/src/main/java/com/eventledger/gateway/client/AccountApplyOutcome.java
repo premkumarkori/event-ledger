@@ -38,7 +38,7 @@ public record AccountApplyOutcome(Kind kind, ConflictType conflictType) {
         return new AccountApplyOutcome(Kind.CONTRACT_ERROR, null);
     }
 
-    static AccountApplyOutcome retryableUnconfirmed() {
+    public static AccountApplyOutcome retryableUnconfirmed() {
         return new AccountApplyOutcome(Kind.RETRYABLE_UNCONFIRMED, null);
     }
 }

@@ -1,7 +1,6 @@
 package com.eventledger.gateway.service;
 
 import com.eventledger.gateway.client.AccountApplyOutcome;
-import com.eventledger.gateway.client.AccountClient;
 import com.eventledger.gateway.client.AccountClientRequest;
 import com.eventledger.gateway.domain.LastFailureCode;
 import com.eventledger.gateway.domain.NormalizedEvent;
@@ -23,18 +22,18 @@ public class EventIngestionService {
     private final EventReader eventReader;
     private final EventStatusWriter statusWriter;
     private final EventEquality equality;
-    private final AccountClient accountClient;
+    private final AccountCallExecutor accountCallExecutor;
 
     public EventIngestionService(EventWriter eventWriter,
                                  EventReader eventReader,
                                  EventStatusWriter statusWriter,
                                  EventEquality equality,
-                                 AccountClient accountClient) {
+                                 AccountCallExecutor accountCallExecutor) {
         this.eventWriter = eventWriter;
         this.eventReader = eventReader;
         this.statusWriter = statusWriter;
         this.equality = equality;
-        this.accountClient = accountClient;
+        this.accountCallExecutor = accountCallExecutor;
     }
 
     public EventSubmissionResult submit(NormalizedEvent event) {
@@ -80,7 +79,7 @@ public class EventIngestionService {
     }
 
     private EventSubmissionResult applyThroughAccount(NormalizedEvent event, boolean created) {
-        AccountApplyOutcome outcome = accountClient.apply(event.accountId(), toAccountRequest(event));
+        AccountApplyOutcome outcome = accountCallExecutor.apply(event.accountId(), toAccountRequest(event));
         return switch (outcome.kind()) {
             case CONFIRMED -> confirm(event.eventId(), created);
             case TERMINAL_CONFLICT -> {
