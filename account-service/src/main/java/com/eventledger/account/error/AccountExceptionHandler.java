@@ -68,6 +68,14 @@ public class AccountExceptionHandler {
                 "Transaction application failed", exception.getMessage(), request);
     }
 
+    @ExceptionHandler(AccountNotFoundException.class)
+    public ProblemDetail handleAccountNotFound(
+            AccountNotFoundException exception,
+            HttpServletRequest request) {
+        return createProblem(HttpStatus.NOT_FOUND, "urn:event-ledger:problem:not-found",
+                "Account not found", exception.getMessage(), request);
+    }
+
     private ProblemDetail createValidationProblem(
             List<Map<String, String>> errors,
             HttpServletRequest request) {

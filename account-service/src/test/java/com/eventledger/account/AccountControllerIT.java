@@ -1,6 +1,7 @@
 package com.eventledger.account;
 
 import com.eventledger.account.domain.TransactionType;
+import com.eventledger.account.persistence.AccountEntity;
 import com.eventledger.account.persistence.AccountRepository;
 import com.eventledger.account.persistence.AccountTransactionEntity;
 import com.eventledger.account.persistence.AccountTransactionRepository;
@@ -26,6 +27,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -294,6 +297,142 @@ class AccountControllerIT {
         assertThat(response.statusCode()).isEqualTo(201);
         assertThat(transactions.findById("evt-1").orElseThrow().getAmount())
                 .isEqualByComparingTo("0.1");
+    }
+
+    @Test
+    void getBalance_shouldReturnCurrencyExactBalanceAndClockAsOf_whenAccountExists() throws Exception {
+        postTransaction("acct-1", requestBody("evt-1", "CREDIT", "150.00", "USD", EVENT_TIME.toString()));
+        postTransaction("acct-1", requestBody(
+                "evt-2", "DEBIT", "29.50", "USD", EVENT_TIME.plusSeconds(60).toString()));
+        clock.setInstant(LATER_TIME);
+
+        HttpResponse<String> response = getResource("/accounts/acct-1/balance");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        JsonNode payload = readJson(response);
+        assertThat(payload.propertyNames())
+                .containsExactlyInAnyOrder("accountId", "currency", "balance", "asOf");
+        assertThat(payload.path("accountId").asString()).isEqualTo("acct-1");
+        assertThat(payload.path("currency").asString()).isEqualTo("USD");
+        assertThat(payload.path("balance").isNumber()).isTrue();
+        assertThat(new BigDecimal(payload.path("balance").asString())).isEqualByComparingTo("120.50");
+        assertThat(payload.path("asOf").asString()).isEqualTo(LATER_TIME.toString());
+    }
+
+    @Test
+    void getDetails_shouldExposeOnlyContractFields_whenAccountExists() throws Exception {
+        postTransaction("acct-1", requestBody("evt-1", "DEBIT", "24.50", "USD", EVENT_TIME.toString()));
+
+        HttpResponse<String> response = getResource("/accounts/acct-1");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        JsonNode payload = readJson(response);
+        assertThat(payload.propertyNames())
+                .containsExactlyInAnyOrder("accountId", "currency", "balance", "recentTransactions");
+        assertThat(payload.path("accountId").asString()).isEqualTo("acct-1");
+        assertThat(payload.path("currency").asString()).isEqualTo("USD");
+        assertThat(payload.path("balance").isNumber()).isTrue();
+        assertThat(new BigDecimal(payload.path("balance").asString())).isEqualByComparingTo("-24.50");
+        JsonNode summary = payload.path("recentTransactions").get(0);
+        assertThat(summary.propertyNames())
+                .containsExactlyInAnyOrder("eventId", "type", "amount", "eventTimestamp");
+        assertThat(summary.path("eventId").asString()).isEqualTo("evt-1");
+        assertThat(summary.path("type").asString()).isEqualTo("DEBIT");
+        assertThat(summary.path("amount").isNumber()).isTrue();
+        assertThat(new BigDecimal(summary.path("amount").asString())).isEqualByComparingTo("24.50");
+        assertThat(summary.path("eventTimestamp").asString()).isEqualTo(EVENT_TIME.toString());
+    }
+
+    @Test
+    void getDetails_shouldReturnNewestTwentyInContractOrder_whenMoreThanTwentyEventsExist() throws Exception {
+        for (int i = 1; i <= 22; i++) {
+            String eventId = "evt-%03d".formatted(i);
+            long secondsAfterBase = Math.min(i, 21);
+            HttpResponse<String> created = postTransaction("acct-1", requestBody(
+                    eventId,
+                    "CREDIT",
+                    "1.00",
+                    "USD",
+                    EVENT_TIME.plusSeconds(secondsAfterBase).toString()));
+            assertThat(created.statusCode()).isEqualTo(201);
+        }
+
+        HttpResponse<String> response = getResource("/accounts/acct-1");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        JsonNode payload = readJson(response);
+        assertThat(new BigDecimal(payload.path("balance").asString()))
+                .isEqualByComparingTo("22.00");
+        List<String> actualEventIds = payload.path("recentTransactions").values().stream()
+                .map(transaction -> transaction.path("eventId").asString())
+                .toList();
+        List<String> expectedEventIds = new ArrayList<>();
+        expectedEventIds.add("evt-022");
+        for (int i = 21; i >= 3; i--) {
+            expectedEventIds.add("evt-%03d".formatted(i));
+        }
+        assertThat(actualEventIds).containsExactlyElementsOf(expectedEventIds);
+    }
+
+    @Test
+    void getBalance_shouldReturn404ProblemDetail_whenAccountIsUnknown() throws Exception {
+        HttpResponse<String> response = getResource("/accounts/acct-missing/balance");
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertProblemDetailContentType(response);
+        JsonNode problem = readJson(response);
+        assertThat(problem.path("type").asString()).isEqualTo("urn:event-ledger:problem:not-found");
+        assertThat(problem.path("status").asInt()).isEqualTo(404);
+        assertThat(problem.path("instance").asString()).isEqualTo("/accounts/acct-missing/balance");
+    }
+
+    @Test
+    void getDetails_shouldReturn404ProblemDetail_whenAccountIsUnknown() throws Exception {
+        HttpResponse<String> response = getResource("/accounts/acct-missing");
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertProblemDetailContentType(response);
+        JsonNode problem = readJson(response);
+        assertThat(problem.path("type").asString()).isEqualTo("urn:event-ledger:problem:not-found");
+        assertThat(problem.path("status").asInt()).isEqualTo(404);
+        assertThat(problem.path("instance").asString()).isEqualTo("/accounts/acct-missing");
+    }
+
+    @Test
+    void getAccountQueries_shouldNotMutateStoredRows_whenAccountExists() throws Exception {
+        postTransaction("acct-1", requestBody("evt-1", "CREDIT", "10.00", "USD", EVENT_TIME.toString()));
+        AccountEntity accountBefore = accounts.findById("acct-1").orElseThrow();
+        AccountTransactionEntity transactionBefore = transactions.findById("evt-1").orElseThrow();
+        long accountsBefore = accounts.count();
+        long transactionsBefore = transactions.count();
+
+        HttpResponse<String> balance = getResource("/accounts/acct-1/balance");
+        HttpResponse<String> details = getResource("/accounts/acct-1");
+
+        assertThat(balance.statusCode()).isEqualTo(200);
+        assertThat(details.statusCode()).isEqualTo(200);
+        assertThat(accounts.count()).isEqualTo(accountsBefore);
+        assertThat(transactions.count()).isEqualTo(transactionsBefore);
+        assertThat(accounts.findById("acct-1").orElseThrow())
+                .usingRecursiveComparison()
+                .isEqualTo(accountBefore);
+        assertThat(transactions.findById("evt-1").orElseThrow())
+                .usingRecursiveComparison()
+                .isEqualTo(transactionBefore);
+    }
+
+    private void assertProblemDetailContentType(HttpResponse<String> response) {
+        assertThat(response.headers().firstValue("Content-Type"))
+                .hasValueSatisfying(contentType ->
+                        assertThat(contentType).startsWith("application/problem+json"));
+    }
+
+    private HttpResponse<String> getResource(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .timeout(Duration.ofSeconds(5))
+                .GET()
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
 }
