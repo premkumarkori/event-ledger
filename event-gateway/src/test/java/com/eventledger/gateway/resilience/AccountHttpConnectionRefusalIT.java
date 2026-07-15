@@ -4,6 +4,7 @@ import com.eventledger.gateway.domain.ApplicationStatus;
 import com.eventledger.gateway.domain.LastFailureCode;
 import com.eventledger.gateway.persistence.EventRepository;
 import com.eventledger.gateway.persistence.StoredEventEntity;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
+import static com.eventledger.gateway.support.AccountCircuitTestSupport.resetAccountCircuit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -56,6 +58,9 @@ class AccountHttpConnectionRefusalIT {
     @Autowired
     private JsonMapper jsonMapper;
 
+    @Autowired
+    private CircuitBreakerRegistry circuitBreakerRegistry;
+
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -63,6 +68,7 @@ class AccountHttpConnectionRefusalIT {
     @BeforeEach
     void reset() {
         events.deleteAll();
+        resetAccountCircuit(circuitBreakerRegistry);
     }
 
     @Test

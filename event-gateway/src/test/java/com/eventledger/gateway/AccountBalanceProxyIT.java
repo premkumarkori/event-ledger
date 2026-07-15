@@ -2,6 +2,7 @@ package com.eventledger.gateway;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.http.Fault;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static com.eventledger.gateway.support.AccountCircuitTestSupport.resetAccountCircuit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -58,6 +60,9 @@ class AccountBalanceProxyIT {
     @Autowired
     private JsonMapper jsonMapper;
 
+    @Autowired
+    private CircuitBreakerRegistry circuitBreakerRegistry;
+
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -65,6 +70,7 @@ class AccountBalanceProxyIT {
     @BeforeEach
     void reset() {
         account.resetAll();
+        resetAccountCircuit(circuitBreakerRegistry);
     }
 
     @Test

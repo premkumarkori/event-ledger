@@ -13,6 +13,7 @@ import com.eventledger.gateway.support.MutableTestClock;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static com.eventledger.gateway.support.AccountCircuitTestSupport.resetAccountCircuit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -153,6 +155,9 @@ class EventApplicationServiceIT {
     @Autowired
     private JsonMapper jsonMapper;
 
+    @Autowired
+    private CircuitBreakerRegistry circuitBreakerRegistry;
+
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -163,6 +168,7 @@ class EventApplicationServiceIT {
         events.deleteAll();
         clock.setInstant(RECEIVED_AT);
         outboundHook.reset();
+        resetAccountCircuit(circuitBreakerRegistry);
     }
 
     private String eventBody(String eventId, String amount, String currency) {

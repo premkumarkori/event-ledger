@@ -8,6 +8,7 @@ import com.eventledger.gateway.persistence.EventRepository;
 import com.eventledger.gateway.persistence.StoredEventEntity;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -51,6 +52,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static com.eventledger.gateway.support.AccountCircuitTestSupport.resetAccountCircuit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -165,11 +167,15 @@ class EventOutcomeMetricsTest {
     @Autowired
     private LateFailureCoordinator lateFailureCoordinator;
 
+    @Autowired
+    private CircuitBreakerRegistry circuitBreakerRegistry;
+
     @BeforeEach
     void resetScenario() {
         account.resetAll();
         events.deleteAll();
         lateFailureCoordinator.disarm();
+        resetAccountCircuit(circuitBreakerRegistry);
     }
 
     @Test

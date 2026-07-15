@@ -2,6 +2,7 @@ package com.eventledger.gateway.observability;
 
 import com.eventledger.gateway.persistence.EventRepository;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static com.eventledger.gateway.support.AccountCircuitTestSupport.resetAccountCircuit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -63,10 +65,14 @@ class PrometheusExpositionIT {
     @Autowired
     private EventRepository events;
 
+    @Autowired
+    private CircuitBreakerRegistry circuitBreakerRegistry;
+
     @BeforeEach
     void resetScenario() {
         account.resetAll();
         events.deleteAll();
+        resetAccountCircuit(circuitBreakerRegistry);
     }
 
     @Test
