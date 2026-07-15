@@ -33,10 +33,10 @@ Therefore:
 
 | Failure | Retry automatically? | Circuit failure? | Client result |
 |---|---|---|---|
-| connect refused | only if the gated retry bonus is selected | yes | `503` if exhausted/no automatic retry |
-| read timeout | only if the gated retry bonus is selected | yes | `503` outcome unconfirmed |
-| Account 500/502/503/504 | only if the gated retry bonus and status policy select it | yes | `503` if exhausted/no automatic retry |
-| Account 400 validation | no | no | `502` contract bug or mapped `400` only if client-caused and safe |
+| connect refused | no automatic retry in the core | yes | `503` outcome unconfirmed |
+| read timeout | no automatic retry in the core | yes | `503` outcome unconfirmed |
+| Account 500/502/503/504 | no automatic retry in the core | yes | `503` outcome unconfirmed |
+| Account 400 validation | no | no | `502` internal contract error |
 | Account 409 ID/payload conflict | no | no | `409`; investigate disagreement |
 | Account 404 on balance | no | no | `404` |
 | open circuit | no immediate retry storm | already open | fast `503` |
@@ -45,13 +45,13 @@ The Gateway stores a bounded failure classification. An identical replay reattem
 
 ## 4. Timeout budget
 
-The exact numbers must be tested on the local demo rather than presented as production truth. A reasonable demo starting point:
+The implemented demo uses small, testable limits rather than claiming
+production-ready tuning:
 
 ```text
 connect timeout: 300 ms
 response timeout: 800 ms
-max attempts: 2 total attempts if retry bonus is enabled
-backoff: 100 ms then bounded exponential/jitter
+max attempts: 1 (no automatic retry)
 client-visible worst case: comfortably below 3 seconds
 ```
 
@@ -59,7 +59,7 @@ Do not make a fragile test assert a microsecond latency. Assert that failure is 
 
 ## 5. Circuit behavior
 
-Suggested demo configuration:
+Implemented demo configuration:
 
 ```text
 sliding window: count-based 6 calls
@@ -74,9 +74,10 @@ These small values make the state observable in a demo. Production thresholds re
 Decorator/order decision:
 
 - timeout is enforced by the HTTP client;
-- optional retry executes the idempotent raw call;
-- the circuit should count one exhausted user operation rather than every internal attempt when possible;
-- record/document the actual Spring Cloud composition and prove it with a request-count test instead of assuming annotation order.
+- no automatic retry wraps the Account call;
+- the circuit records infrastructure failures only;
+- request-count tests prove the actual Spring Cloud behavior instead of assuming
+  decorator order.
 
 ## 6. Concurrent-request edge case
 

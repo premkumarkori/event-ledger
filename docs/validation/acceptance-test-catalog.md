@@ -1,9 +1,7 @@
 # Acceptance test catalog
 
-This catalog is the planned traceability map from requirements to proof. Test
-names are suggestions. Replace them only when the implemented name is recorded in
-the evidence. A row is not `PASS` until the stated result has been observed on the
-current revision.
+This catalog maps requirements to proof scenarios. A row is not `PASS` until the
+stated result has been observed on the current revision.
 
 ## Build and service boundaries
 
@@ -83,7 +81,7 @@ current revision.
 | AT-063 | `NFR-034` | Git review | Inspect `git log --oneline --decorate --reverse`. | Commits correspond to real green checkpoints; no fabricated count and no single unexplained implementation dump. |
 | AT-064 | `CON-003` | Repository hygiene | Run tracked-file and content leak checks from `final-review-checklist.md`. | No original input/personal documents, credentials, local absolute paths, private preparation notes, or local Claude settings tracked. |
 | AT-065 | `NFR-035` | Compose/process integration | Apply an event, stop and start Account without deleting its named volume, then query/replay through the documented service path; also inspect both service DB paths/volumes. | Previously committed Account row/balance remains, replay has one effect, and Gateway/Account use different H2 files/volumes. Evidence makes no production HA/backup claim. |
-| AT-066 | `EXT-002` | Optional CI | After local Java 17 verify passes, push a workflow that runs the same wrapper command on Java 17. | Actual GitHub Actions run URL is green; until then documentation says only “configured.” |
+| AT-066 | `EXT-002` | Optional CI | After local Java 17 verify passes, push a workflow that runs the same wrapper command on Java 17. | Actual GitHub Actions run URL is green for a named commit SHA; until observed, documentation says only “configured.” |
 | AT-067 | `EXT-003` | Optional trace backend | Start the observability Compose profile and submit one request. | Jaeger displays Gateway and Account spans in one trace; automated AT-050 remains green with the profile off. |
 | AT-068 | `EXT-005` | Optional contract check | Validate both OpenAPI files and compare operations/statuses with controller mappings. | Validator exits `0`; implemented operations and documented statuses match. |
 | AT-069 | `EXT-006` | Optional rate limit | If admitted, exceed the documented key/window limit and then allow the window to recover. | Deterministic `429`/`Retry-After`, bounded metric labels, and no impact on local reads; otherwise extension is deferred. |
@@ -91,6 +89,6 @@ current revision.
 
 ## Coverage closure
 
-Before submission, copy this table into an evidence record or add result/evidence
-columns. Every core row must be `PASS`. `SHOULD` and extension rows may be
-`UNPROVEN` or deferred only when the public README states the limitation plainly.
+Every core row must be `PASS` on the revision under review. `SHOULD` and
+extension rows may be `UNPROVEN` or deferred only when the public README states
+the limitation plainly.

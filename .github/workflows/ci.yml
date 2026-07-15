@@ -1,6 +1,5 @@
-# EXT-002: Java 17 verify on push/PR.
-# Action majors frozen by the accepted project plan (reviewed 2026-07-14).
-# This workflow does not run Docker/Compose.
+# Java 17 verification for the Maven project. The Compose demo is verified
+# separately because this workflow does not run Docker.
 name: verify
 
 on:

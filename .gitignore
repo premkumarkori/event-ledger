@@ -1,8 +1,15 @@
 # Event Ledger repository ignores
 
-# Claude Code: local-only settings and instructions
-.claude/settings.local.json
+# Local AI workspace and instructions
+.claude/
+CLAUDE.md
 CLAUDE.local.md
+
+# Local implementation notes and evidence
+docs/execution/
+docs/phases/
+docs/spec/traceability-matrix.md
+docs/validation/test-evidence-template.md
 
 # Secrets and environment values
 .env

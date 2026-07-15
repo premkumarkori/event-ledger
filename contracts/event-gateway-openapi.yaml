@@ -5,12 +5,14 @@ info:
   description: >
     Public entry point of the Event Ledger. Accepts financial transaction
     events, enforces idempotency by eventId, serves stored-event queries from
-    its own database, and proxies the account balance. This is the frozen
-    target contract; controller-to-contract conformance is verified by a
-    separate review task.
+    its own database, and proxies the account balance. Keep this file aligned
+    with the implemented controllers and tests.
 servers:
   - url: http://localhost:8080
     description: Local development
+
+# This take-home API intentionally has no authentication layer.
+security: []
 
 paths:
   /events:
@@ -50,8 +52,6 @@ paths:
               schema:
                 type: string
                 format: uri-reference
-            X-Trace-Id:
-              $ref: '#/components/headers/XTraceId'
           content:
             application/json:
               schema:
@@ -103,7 +103,6 @@ paths:
                 status: 409
                 detail: eventId evt-001 already belongs to a different event payload
                 instance: /events
-                traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
         '502':
           description: >
             The Account Service rejected the internal request or returned an
@@ -166,6 +165,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StoredEvent'
+        '400':
+          $ref: '#/components/responses/ValidationProblem'
         '404':
           $ref: '#/components/responses/NotFoundProblem'
   /accounts/{accountId}/balance:
@@ -261,12 +262,6 @@ components:
         type: string
         pattern: '^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$'
   headers:
-    XTraceId:
-      description: Trace identifier echoed for demo/support correlation; W3C traceparent remains the propagation contract.
-      required: false
-      schema:
-        type: string
-        pattern: '^[0-9a-f]{32}$'
     RetryAfter:
       description: Suggested wait, in seconds, before retrying the same eventId.
       required: true
@@ -284,9 +279,8 @@ components:
             type: 'urn:event-ledger:problem:validation'
             title: Validation failed
             status: 400
-            detail: Request has 2 invalid fields
+            detail: Request has 2 invalid field(s)
             instance: /events
-            traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
             errors:
               - field: amount
                 message: must be greater than 0
@@ -316,7 +310,6 @@ components:
             status: 503
             detail: Application of event evt-002 could not be confirmed. Retrying the same eventId is safe.
             instance: /events
-            traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
             eventId: evt-002
             applicationStatus: APPLY_FAILED
     AccountQueryUnavailable:
@@ -331,7 +324,6 @@ components:
             status: 503
             detail: Account balance is temporarily unavailable.
             instance: /accounts/acct-123/balance
-            traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
   schemas:
     Identifier:
       type: string
@@ -461,7 +453,7 @@ components:
           const: event-gateway
         checks:
           type: object
-          required: [database]
+          required: [database, accountService, circuitBreaker]
           properties:
             database:
               type: string
@@ -489,9 +481,6 @@ components:
           description: Sanitized summary; never metadata, stack traces, SQL errors, or downstream exception text.
         instance:
           type: string
-        traceId:
-          type: string
-          pattern: '^[0-9a-f]{32}$'
     ValidationProblemDetail:
       allOf:
         - $ref: '#/components/schemas/ProblemDetail'

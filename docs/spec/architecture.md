@@ -8,14 +8,16 @@ flowchart LR
     G -->|"sync REST + traceparent"| A["Account Service :8081"]
     G --> GDB[("Gateway H2\nevents")]
     A --> ADB[("Account H2\ntransactions")]
-    G -. "OTLP optional" .-> O["OTel Collector"]
-    A -. "OTLP optional" .-> O
-    O -.-> J["Jaeger optional"]
-    P["Prometheus optional"] -. "scrape" .-> G
-    P -. "scrape" .-> A
+    G -. "OTLP deferred" .-> O["OTel Collector"]
+    A -. "OTLP deferred" .-> O
+    O -.-> J["Jaeger deferred"]
+    P["External Prometheus"] -. "scrape Gateway" .-> G
 ```
 
-The two service databases have no link. Default runtime profiles use two different file-backed H2 paths/volumes; tests use isolated in-memory H2. The dotted components are bonus runtime tooling, not required for correctness.
+The two service databases have no link. Default runtime profiles use two
+different file-backed H2 paths/volumes; tests use isolated in-memory H2. Gateway
+exposes a Prometheus scrape endpoint. An external Prometheus server, OTel
+Collector, and Jaeger UI are not bundled with the core Compose stack.
 
 ## 2. Responsibilities
 
@@ -59,7 +61,7 @@ Does not own:
 
 ## 3. Maven/repository boundary
 
-Planned modules:
+Repository modules:
 
 ```text
 event-ledger/
@@ -163,8 +165,8 @@ This is why Account idempotency is a requirement, even though Gateway already de
 | `POST /events` | apply and respond | bounded `503`, local event retained |
 | `GET /events/{id}` | local `200/404` | same local `200/404` |
 | `GET /events?account=...` | local ordered list | same local ordered list |
-| Required `GET /accounts/{id}/balance` Gateway proxy | proxy `200/404` | clear `503` |
-| Selected enhanced Gateway health SHOULD | `UP` | `DEGRADED` or `UP` with dependency unavailable; DB still checked |
+| `GET /accounts/{id}/balance` Gateway proxy | proxy `200/404` | clear `503` |
+| Gateway `GET /health` | `UP` after a successful Account observation | `DEGRADED`; local DB is still checked |
 
 ## 8. Correctness invariants
 
@@ -176,11 +178,14 @@ This is why Account idempotency is a requirement, even though Gateway already de
 6. Balance is derived only from successfully inserted Account transactions.
 7. Event query order uses business time, not processing time.
 8. A timeout produces an unknown remote outcome, not proof of rollback.
-9. Automatic retry, if selected, is gated and bounded; same-ID client recovery relies on downstream idempotency.
+9. The core has no automatic HTTP retry; same-ID client recovery relies on downstream idempotency.
 10. Metrics/logs do not use financial identifiers as tags or dump metadata.
 
 ## 9. Embedded storage and scaling boundary
 
-Use file-backed H2 for default local/Compose runtime and a separate file/volume per service. That lets the failure demo stop and start a process without erasing already committed rows. Use unique in-memory H2 databases for automated test isolation.
+Default local and Compose runtimes use file-backed H2 with a separate
+file/volume per service. That lets the failure demo stop and start a process
+without erasing already committed rows. Automated tests use unique in-memory H2
+databases for isolation.
 
 File-backed does **not** make these services horizontally scalable or production durable. A single embedded file is still instance-local. A production evolution would use PostgreSQL or another managed durable store, schema migrations, reconciliation, backups, and likely an outbox/broker flow. Do not claim that switching databases is only a JDBC URL change; SQL, locking, migrations, operations, and concurrency tests must be revisited.

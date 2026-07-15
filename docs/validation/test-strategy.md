@@ -16,10 +16,10 @@ functional and non-functional IDs in `../spec/requirements.md`.
   Maven JVM may be JDK 21; final compatibility is also run on Java 17.
 - Spring Boot 4.1 and JUnit Jupiter.
 - H2 at repository/integration boundaries: isolated in-memory databases for
-  tests; the selected `NFR-035` target uses separate file-backed paths/volumes
-  for local and Compose runtime. If that `SHOULD` is cut, document the actual
-  embedded mode and make no restart-durability claim.
-- AssertJ for readable assertions if included in the build.
+  tests; local and Compose runtime use separate file-backed paths/volumes
+  (`NFR-035`). Restart-durability claims stay scoped to stop/start with those
+  volumes—not production HA or backup.
+- AssertJ for readable assertions.
 - WireMock for controlled Account responses, delays, request counts, and captured
   `traceparent` at the Gateway HTTP boundary.
 - A separate `integration-tests` Maven module for at least one real two-service

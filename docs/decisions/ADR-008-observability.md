@@ -14,10 +14,11 @@ Implement four separate signals:
 
 1. **Trace:** Boot 4.1's `spring-boot-starter-opentelemetry`; continue incoming W3C context and propagate `traceparent` through Spring's auto-configured `RestClient.Builder`. Trace tests use Boot 4's tracing test support rather than assuming `@SpringBootTest` enables reporting components.
 2. **Log:** Spring Boot native structured JSON with timestamp, level, service, trace ID, and message. Do not log metadata or complete payloads.
-3. **Metric:** Micrometer counter `ledger.events` with only `outcome=created|replayed|conflict|apply_failed`; an admitted Prometheus extension exposes it as `ledger_events_total`.
+3. **Metric:** Micrometer counter `ledger.events` with only `outcome=created|replayed|conflict|apply_failed`; Prometheus exposes it as `ledger_events_total`.
 4. **Health:** local DB diagnostic plus last-observed Account/circuit state at Gateway. Do not issue a live Account request for every health call.
 
-An optional `X-Trace-Id` response header helps the demo, but W3C context remains the propagation contract.
+W3C `traceparent` is the propagation contract. Trace IDs appear in structured
+logs; they are not required as a custom response header or ProblemDetail field.
 
 ## Why
 

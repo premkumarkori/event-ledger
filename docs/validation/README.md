@@ -1,9 +1,8 @@
 # Validation guide
 
-This folder defines how to prove the Event Ledger solution works. It is a plan,
-not a test report. Nothing here means that code exists or that a test has passed.
-Record results only after running the command against the exact revision being
-reviewed.
+This folder explains how to prove Event Ledger behavior: automated tests, the
+Compose demo, and the final review checklist. A claim is only `PASS` after the
+named command or demo step has been observed on the revision under review.
 
 ## Files
 
@@ -14,8 +13,8 @@ reviewed.
 | `demo-runbook.md` | a repeatable human walkthrough, including Account outage |
 | `final-review-checklist.md` | the last core, security, documentation, and Git review |
 
-The requirement source is `../spec/requirements.md`. Use its IDs in test
-names, evidence records, progress updates, and review findings.
+The requirement source is `../spec/requirements.md`. Use its IDs in test names
+and review findings.
 
 ## What counts as evidence
 
@@ -34,7 +33,7 @@ two-service flow.
 
 ## Standard verification sequence
 
-Run from the repository root after the Maven scaffold exists:
+Run from the repository root:
 
 ```bash
 java -version
@@ -51,14 +50,13 @@ git status --short
 Expected evidence:
 
 - the normal local JVM may report JDK 21, while Maven compiles with release 17;
-- a separate final compatibility run uses Java 17;
+- a separate compatibility run uses Java 17 (local JDK or CI);
 - each Maven command exits `0` with zero test failures and errors;
-- root `verify` shows every reactor module as `SUCCESS`;
+- root verify discovers **431** tests and every reactor module is `SUCCESS`;
 - `git diff --check` exits `0` without whitespace-error output;
 - every line in `git status --short` is understood and intentional.
 
-Artifact IDs in the `-pl` commands are the planned IDs. If implementation chooses
-different IDs, update the public commands and all validation docs together.
+Module artifact IDs are `account-service`, `event-gateway`, and `integration-tests`.
 
 ## Core gate
 

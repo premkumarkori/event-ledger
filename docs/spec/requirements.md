@@ -3,9 +3,9 @@
 Status vocabulary in this file:
 
 - **MUST**: required for submission.
-- **SHOULD**: high-value interpretation or quality addition targeted by this
-  plan, but not a project-brief `MUST`; it may be explicitly `CUT` with a tested
-  fallback/limitation and honest public wording.
+- **SHOULD**: high-value interpretation or quality addition, but not a
+  project-brief `MUST`; it may be explicitly deferred with a tested fallback or
+  an honestly documented limitation.
 - **MAY**: optional bonus after the mandatory gate.
 - **OUT**: deliberately not implemented in the core.
 
@@ -215,7 +215,9 @@ Every incoming Gateway request MUST have a trace. The Gateway-to-Account call MU
 
 **AC-NFR010-01:** a test captures the Account request and proves a valid `traceparent` header was sent.
 
-**AC-NFR010-02:** Gateway may return `X-Trace-Id` for demo/support correlation, but it is not the primary propagation format.
+**AC-NFR010-02:** W3C `traceparent` is the propagation format. Trace IDs appear in
+structured logs; a custom `X-Trace-Id` response header or ProblemDetail `traceId`
+field is not part of the public contract.
 
 ### NFR-011 - Structured logs
 
@@ -252,7 +254,7 @@ Gateway local DB health controls Gateway availability. Account outage may produc
 
 ### NFR-014 - Prometheus
 
-The services SHOULD expose `/actuator/prometheus` as a cheap, visible bonus.
+Gateway SHOULD expose `/actuator/prometheus` as a cheap, visible bonus.
 
 ## 7. Resilience
 
@@ -346,7 +348,7 @@ Use the reviewed compatible baseline: Spring Boot 4.1.0, Spring Cloud 2025.1.2, 
 
 ### CON-005 - Evidence language
 
-Plans may say “create,” “run,” or “expected.” README and progress files MUST NOT say a feature is implemented or a test passes until the named command has actually produced recorded evidence.
+Plans may say “create,” “run,” or “expected.” README and public docs MUST NOT say a feature is implemented or a test passes until the named command has actually produced recorded evidence.
 
 ## 10. Optional extensions
 

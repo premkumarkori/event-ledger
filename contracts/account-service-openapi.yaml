@@ -6,12 +6,14 @@ info:
     Internal service of the Event Ledger. Owns the immutable transaction
     journal, enforces idempotency by eventId, establishes one currency per
     account, and derives balances from the journal. Called only by the Event
-    Gateway; not published to the host in the default runtime. This is the
-    frozen target contract; controller-to-contract conformance is verified by
-    a separate review task.
+    Gateway; not published to the host in the default runtime. Keep this file
+    aligned with the implemented controllers and tests.
 servers:
   - url: http://account-service:8081
     description: Private Compose network address
+
+# This take-home API intentionally has no authentication layer.
+security: []
 
 paths:
   /accounts/{accountId}/transactions:
@@ -79,7 +81,6 @@ paths:
                 status: 409
                 detail: account acct-123 is established in USD and cannot accept EUR
                 instance: /accounts/acct-123/transactions
-                traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
         '500':
           description: >
             A bounded local collision recovery could not converge. No partial
@@ -188,9 +189,8 @@ components:
             type: 'urn:event-ledger:problem:validation'
             title: Validation failed
             status: 400
-            detail: Request has 1 invalid field
+            detail: Request has 1 invalid field(s)
             instance: /accounts/acct-123/transactions
-            traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
             errors:
               - field: amount
                 message: must be greater than 0
@@ -345,9 +345,6 @@ components:
           description: Sanitized summary; never stack traces, SQL errors, or internal exception text.
         instance:
           type: string
-        traceId:
-          type: string
-          pattern: '^[0-9a-f]{32}$'
     ValidationProblemDetail:
       allOf:
         - $ref: '#/components/schemas/ProblemDetail'

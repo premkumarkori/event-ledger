@@ -1,13 +1,14 @@
 # API contract
 
-Base URLs in local development:
+Base URLs:
 
 ```text
-Gateway: http://localhost:8080
-Account: http://account-service:8081 inside Compose
+Gateway (local / Compose host): http://localhost:8080
+Account (local two-process):    http://localhost:8081
+Account (Compose network):      http://account-service:8081
 ```
 
-Account is not published to the host in the final Compose unless a `debug` profile is used.
+Compose does not publish Account to the host by default.
 
 ## 1. Event request
 
@@ -42,12 +43,12 @@ public record EventRequest(
 ) {}
 ```
 
-Spring Boot 4.1 defaults to Jackson 3. Use `tools.jackson.*` (`JsonNode`,
-`JsonMapper`) in new code. Do not accidentally copy deprecated Jackson 2
-`com.fasterxml.jackson.databind.*` imports; Jackson annotations remain under
+Spring Boot 4.1 uses Jackson 3 in this project. Transport code therefore uses
+`tools.jackson.*` (`JsonNode`, `JsonMapper`); Jackson annotations remain under
 `com.fasterxml.jackson.annotation` by design.
 
-Use Jakarta validation annotations on record components where appropriate and add a validator for metadata object/currency normalization.
+Record components use Jakarta validation, with focused validators for metadata,
+currency, identifiers, and decimal storage bounds.
 
 Exact boundary normalization:
 
@@ -55,12 +56,12 @@ Exact boundary normalization:
 - accept exactly three ASCII currency letters, uppercase them, and reject codes
   not recognized by Java 17 `Currency.getInstance`;
 - reject an amount that cannot fit `decimal(38,18)` without rounding (20 integer digits, 18 fractional digits after insignificant trailing zeroes are removed);
-- normalize missing/`null` metadata to `{}`;
 - normalize missing/`null` metadata to `{}` and compare parsed metadata with
   ordinary `JsonNode.equals`; object member order is ignored, while array order
   and numeric node representation remain significant.
 
-This behavior must appear in validation and idempotency tests. It is not acceptable to let H2 throw a generic `500` for an oversized amount.
+Validation and idempotency tests cover these boundaries. Oversized amounts are
+rejected as client errors instead of leaking a generic H2 `500`.
 
 ## 2. Gateway `POST /events`
 
@@ -83,7 +84,7 @@ This behavior must appear in validation and idempotency tests. It is not accepta
 
 | Status | Meaning | Headers |
 |---|---|---|
-| `201 Created` | new Gateway event and confirmed Account application | `Location: /events/evt-001`, optional `X-Trace-Id` |
+| `201 Created` | new Gateway event and confirmed Account application | `Location: /events/evt-001` |
 | `200 OK` | identical existing event; already applied or safe recovery completed | `X-Idempotent-Replay: true` |
 | `400 Bad Request` | validation failed | problem JSON |
 | `409 Conflict` | event ID reused with different payload, or Account reports a deterministic currency/idempotency conflict | problem JSON |
@@ -99,7 +100,6 @@ This behavior must appear in validation and idempotency tests. It is not accepta
   "status": 503,
   "detail": "Application of event evt-002 could not be confirmed. Retrying the same eventId is safe.",
   "instance": "/events",
-  "traceId": "4f2d...",
   "eventId": "evt-002",
   "applicationStatus": "APPLY_FAILED"
 }
@@ -114,6 +114,7 @@ For a terminal Account conflict, Gateway stores `APPLY_FAILED` with a terminal f
 ### `GET /events/{eventId}`
 
 - `200` with the stored event representation, including `RECEIVED`, `APPLIED`, or `APPLY_FAILED`.
+- `400` ProblemDetail when the path identifier is malformed.
 - `404` ProblemDetail when absent.
 
 ### `GET /events?account={accountId}`
@@ -139,8 +140,10 @@ This required interpretation makes client balance-degradation behavior
 observable while Account remains an internal service.
 
 - `200`: proxied Account balance.
+- `400`: invalid `accountId`.
 - `404`: Account has no transaction/account.
-- `503`: Account call unavailable/timeout/open circuit.
+- `502`: Account returned an invalid/contract-breaking balance body.
+- `503`: Account call unavailable/timeout/open circuit (no `Retry-After`).
 
 ```json
 {
@@ -262,7 +265,6 @@ Use Spring `ProblemDetail`:
   "status": 409,
   "detail": "eventId evt-001 already belongs to a different event payload",
   "instance": "/events",
-  "traceId": "4f2d...",
   "errors": []
 }
 ```
@@ -287,15 +289,18 @@ Primary request propagation:
 traceparent: 00-<32 hex trace id>-<16 hex span id>-01
 ```
 
-Do not manually generate a separate trace ID when a valid upstream `traceparent` exists. Let the tracing library continue it. Build the Account client from Spring's injected auto-configured `RestClient.Builder`; creating a bare client can bypass instrumentation.
+The tracing library continues a valid upstream trace ID and creates a new child
+span. The Account client uses Spring's auto-configured `RestClient.Builder`, so
+HTTP instrumentation remains active.
 
 ## 10. Contract files in this repository
 
-Create:
+Machine-readable contracts live at:
 
 ```text
 contracts/event-gateway-openapi.yaml
 contracts/account-service-openapi.yaml
 ```
 
-The YAML must match implemented responses before it is called complete. Static OpenAPI is useful even if no code generator is added.
+They must match the implemented controllers and tests. Static OpenAPI is useful
+even without a code generator.

@@ -104,9 +104,9 @@ evidence ID should be treated as unproven.
 docker compose config --quiet
 ```
 
-- [ ] If implemented, Compose config exits `0` and images use Java 17 (`NFR-032`).
-- [ ] If Compose was deliberately cut, tested step-by-step local start commands
-  for both services are present and the preferred item is declared deferred.
+- [ ] Compose config exits `0` and images use Java 17 (`NFR-032`).
+- [ ] README contains tested local two-process start commands as a Compose-free
+  fallback.
 - [ ] Under Compose, Account is private by default; any host exposure is
   debug-only/documented.
 - [ ] Gateway can start when Account is late or unavailable.
@@ -137,10 +137,10 @@ rg -n "$PLANNING_PATH_PATTERN|$PRIVATE_PATH_PATTERN" \
   README.md docs
 ```
 
-Expected: no matches in the public repository. The public planning layout is
-`docs/{spec,execution,phases,decisions,validation}`; old source-workspace folder
-names are not valid public targets. Also open/click the relative links in README
-and `docs/`; these searches do not prove that an arbitrary renamed target exists.
+Expected: no matches in the public repository. Tracked public docs live under
+`docs/spec`, `docs/decisions`, and `docs/validation` plus `README.md` and
+`docs/START-HERE.md`. Also open/click the relative links in README and `docs/`;
+path searches alone do not prove every renamed target exists.
 
 ## 8. Public repository hygiene
 

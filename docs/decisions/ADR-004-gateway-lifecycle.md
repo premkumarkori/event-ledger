@@ -10,13 +10,13 @@ There is no distributed transaction across two H2 databases and an HTTP call. Ho
 
 ## Decision
 
-Gateway will:
+Gateway:
 
-1. validate and normalize;
-2. insert `RECEIVED` and commit;
-3. call Account with no Gateway DB transaction held;
-4. update status in a fresh local transaction;
-5. return `APPLIED` only after new/replay confirmation.
+1. validates and normalizes;
+2. inserts `RECEIVED` and commits;
+3. calls Account with no Gateway DB transaction held;
+4. updates status in a fresh local transaction;
+5. returns `APPLIED` only after new/replay confirmation.
 
 States are `RECEIVED`, `APPLIED`, and `APPLY_FAILED`. `APPLIED` is terminal. `markFailed` uses a conditional update that cannot overwrite `APPLIED`.
 

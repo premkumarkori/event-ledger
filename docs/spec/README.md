@@ -10,7 +10,7 @@ Read in this order:
 4. [Failure model](failure-model.md) — crash points and uncertain outcomes.
 5. [API contract](api-contract.md) — request/response behavior.
 6. [Architecture decisions](../decisions/README.md) — why major choices were made and what they cost.
-7. [Acceptance test catalog](../validation/acceptance-test-catalog.md) — how required behavior will be proved.
+7. [Acceptance test catalog](../validation/acceptance-test-catalog.md) — requirement-to-proof scenarios.
 
 Requirement IDs use these prefixes:
 

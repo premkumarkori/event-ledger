@@ -2,7 +2,7 @@
 
 ## 1. Gateway event table
 
-Suggested logical schema (exact DDL can change with the implementation):
+Logical schema (DDL lives with each service under `db/*/schema.sql`):
 
 | Column | Type | Rule / purpose |
 |---|---|---|
@@ -148,7 +148,7 @@ This prevents a late failing concurrent request from overwriting a successful
 result and preserves the first stored `appliedAt` when a second successful caller
 arrives after the row is already `APPLIED`.
 
-Suggested failure classes:
+Stored failure classes:
 
 ```text
 RETRYABLE_UNCONFIRMED: timeout, connect failure, open circuit, selected 5xx

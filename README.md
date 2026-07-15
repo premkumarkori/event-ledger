@@ -1,24 +1,228 @@
 # Event Ledger
 
-Status: the Java 17 multi-module Maven scaffold is implemented and verified —
-both applications start, and the current context tests pass on JDK 21 and on a
-real JDK 17. Business endpoints, persistence models, resilience, observability
-wiring, Docker, and the real cross-service acceptance behavior are not
-implemented yet.
+Event Ledger accepts credit and debit events through an Event Gateway, applies
+one financial effect per event ID in an Account Service, and returns an exact
+derived balance. Both services are independently runnable Spring Boot
+applications on Java 17.
 
-Event Ledger is built as two independently runnable Spring Boot services. The
-behavior below is the specified target of the remaining work:
+This repository is a finished take-home implementation: HTTP APIs, separate H2
+databases, timeouts and a circuit breaker, tracing/logging/metrics, Docker
+Compose, and a real two-service acceptance suite are implemented and verified.
 
-- Event Gateway accepts, validates, stores, and queries transaction events, then
-  calls Account Service synchronously over HTTP.
-- Account Service owns an immutable transaction journal, idempotent application,
-  account currency, balances, and account queries.
-- Each service owns a separate H2 database. No production module reads the other
-  service's repository or tables.
+## Architecture
 
-The project targets Java 17 source/bytecode with Spring Boot 4.1. A local JDK 21
-may run Maven while `maven.compiler.release=17` enforces compatibility; the final
-gate also runs the suite on Java 17.
+```text
+Client
+  |
+  | POST /events
+  v
+Event Gateway ----HTTP----> Account Service
+  |                              |
+  v                              v
+Gateway H2                    Account H2
+```
+
+- **Event Gateway** owns intake, validation, storage, lifecycle status, local
+  event queries, and a balance proxy.
+- **Account Service** owns the immutable transaction journal, account currency,
+  and derived balances.
+- Production communication is **HTTP only**. Neither service reads the other
+  service's tables or repositories.
+- Each service owns a **separate database**.
+
+## Idempotency
+
+`eventId` is the end-to-end idempotency key.
+
+- Same ID + same normalized payload → safe replay (one financial effect).
+- Same ID + different payload → `409` conflict.
+- Both services enforce a primary key on `event_id`, so a lost Account response
+  plus a same-ID retry cannot create a second effect.
+
+## Gateway lifecycle
+
+| Status | Meaning |
+|---|---|
+| `RECEIVED` | Stored locally; Account confirmation not yet known |
+| `APPLIED` | Account confirmed a new apply or safe replay (terminal) |
+| `APPLY_FAILED` | Confirmation failed or Account rejected the request |
+
+Failure codes on `APPLY_FAILED`:
+
+- `RETRYABLE_UNCONFIRMED` — timeout, connection refusal, open circuit, selected
+  Account `5xx`. Same-ID client retry is safe.
+- `TERMINAL_CONFLICT` — idempotency or currency conflict. Do not retry as a new apply.
+- `CONTRACT_ERROR` — Account rejected the internal request or returned an invalid
+  body. Investigate; do not blind-retry.
+
+A late failing thread never overwrites `APPLIED`.
+
+## Prerequisites
+
+- Java 17 (local Maven may also run on JDK 21; bytecode target stays 17)
+- Maven Wrapper (`./mvnw`)
+- Docker and Docker Compose (for the demo)
+- `curl` and `jq` (for the demo script)
+
+## Build and test
+
+```bash
+./mvnw test
+./mvnw verify
+./mvnw -pl :integration-tests -am test
+```
+
+Root verification discovers **431** tests across Account (237), Gateway (192),
+and the real two-service integration module (2), with zero failures or errors.
+
+Java 17 CI runs `./mvnw --batch-mode verify` on push and pull request. The
+[GitHub Actions run for commit `72538a5`](https://github.com/premkumarkori/event-ledger/actions/runs/29443328779)
+completed successfully.
+
+That workflow proves Maven verify on Temurin 17 only; it does not run Docker or
+Compose.
+
+## Local two-process start
+
+```bash
+./mvnw -DskipTests package
+```
+
+Start each service in its own terminal:
+
+```bash
+# Terminal 1
+java -jar account-service/target/account-service-0.1.0-SNAPSHOT-exec.jar
+```
+
+```bash
+# Terminal 2
+java -jar event-gateway/target/event-gateway-0.1.0-SNAPSHOT-exec.jar
+```
+
+Use the classified `*-exec.jar` names above. Do not pass a bare `*.jar` wildcard
+that could select the thin JAR used by the integration-test module.
+
+Default ports: Gateway `8080`, Account `8081`.
+
+## Docker Compose
+
+Images copy the already-built executable JARs, so verify first:
+
+```bash
+./mvnw verify
+docker compose up --build -d
+```
+
+Only Gateway is published to the host (`8080` by default). Override with
+`GATEWAY_HOST_PORT` if needed:
+
+```bash
+GATEWAY_HOST_PORT=18080 docker compose up --build -d
+```
+
+Account stays on the Compose network at `http://account-service:8081`. Named
+volumes keep each service's H2 files separate.
+
+## Demo
+
+```bash
+./mvnw verify
+bash scripts/demo.sh
+```
+
+`scripts/demo.sh` expects the classified `*-exec.jar` artifacts (run Maven
+verify or package first). It then builds Compose images, starts a unique project,
+exercises happy path / replay / Account outage / recovery / restart retention,
+and leaves containers, named volumes, and a temporary evidence directory for
+review. It does **not** run `docker compose down -v`. When you are finished
+reviewing that project, cleanup with `down -v` deletes that demo project's data.
+
+## Sample calls
+
+```bash
+cat >/tmp/event-ledger-event.json <<'JSON'
+{
+  "eventId": "evt-001",
+  "accountId": "acct-1",
+  "type": "CREDIT",
+  "amount": 150.00,
+  "currency": "USD",
+  "eventTimestamp": "2026-05-15T14:02:11Z",
+  "metadata": {"source": "demo"}
+}
+JSON
+
+# Submit the event
+curl -sS -D - -H 'Content-Type: application/json' \
+  --data-binary @/tmp/event-ledger-event.json \
+  http://localhost:8080/events
+
+# Identical replay (expect 200 and X-Idempotent-Replay: true)
+curl -sS -D - -H 'Content-Type: application/json' \
+  --data-binary @/tmp/event-ledger-event.json \
+  http://localhost:8080/events
+
+# Read stored event
+curl -sS http://localhost:8080/events/evt-001
+
+# List account events (eventTimestamp ASC, eventId ASC)
+curl -sS 'http://localhost:8080/events?account=acct-1'
+
+# Balance proxy
+curl -sS http://localhost:8080/accounts/acct-1/balance
+
+# Health
+curl -sS http://localhost:8080/health
+```
+
+## Resilience
+
+- Connect timeout **300ms**, read timeout **800ms**
+- One named circuit breaker (`accountService`)
+- No automatic HTTP retry in the core
+- Same-ID client retry is safe only for `RETRYABLE_UNCONFIRMED` outcomes
+- Write-path `503` responses include `Retry-After: 5`
+
+## Observability
+
+- W3C `traceparent` propagation Gateway → Account
+- Spring Boot ECS structured JSON logs (no full sensitive payloads)
+- Micrometer `ledger.events` with four bounded outcomes:
+  `created`, `replayed`, `conflict`, `apply_failed`
+- Prometheus scrape at Gateway `/actuator/prometheus`
+- Public `/health` on both services (Gateway may report `DEGRADED` when Account
+  is unavailable; local event reads still work)
+
+## Storage
+
+- Local and Compose runtime: file-backed H2 under separate paths/volumes
+- Automated tests: isolated in-memory H2
+- Container stop/start with the same named volume retains committed rows
+- That is not a production HA, backup, or disaster-recovery claim
+
+## Limitations
+
+- No authentication or authorization
+- No message broker, distributed transaction, or 2PC
+- Not double-entry accounting
+- Negative balances are allowed
+- One currency per account
+- Embedded H2 is not claimed as horizontally scalable production storage
+- Deleting Compose volumes deletes that project's data
+
+## Optional features
+
+| Feature | Status |
+|---|---|
+| Prometheus (`EXT-001`) | Implemented |
+| Java 17 CI (`EXT-002`) | Passing for `72538a5` at the Actions URL above |
+| Static OpenAPI validation (`EXT-005`) | Implemented; both contracts pass semantic lint |
+| Automatic HTTP retry (`EXT-004`) | Deferred |
+| Jaeger / OTLP collector UI (`EXT-003`) | Deferred |
+| Pact (`EXT-008`) | Deferred |
+| Rate limiting (`EXT-006`) | Deferred |
+| Reconciliation worker | Design-only / deferred |
 
 ## Reviewer path
 
@@ -26,35 +230,12 @@ gate also runs the suite on Java 17.
 2. [Architecture](docs/spec/architecture.md)
 3. [Requirements](docs/spec/requirements.md)
 4. [API contract](docs/spec/api-contract.md)
-5. [Architecture decisions](docs/decisions/README.md)
-6. [Acceptance catalog](docs/validation/acceptance-test-catalog.md)
+5. [OpenAPI](contracts/event-gateway-openapi.yaml) /
+   [Account OpenAPI](contracts/account-service-openapi.yaml)
+6. [Architecture decisions](docs/decisions/README.md)
+7. [Demo runbook](docs/validation/demo-runbook.md)
+8. [Acceptance catalog](docs/validation/acceptance-test-catalog.md)
 
-All nine ADRs were reviewed and accepted by the candidate at T-000 (2026-07-14).
-In the spec and validation documents, commands and expected results describe
-target behavior; only the build commands below are verified today.
-
-## AI-assisted workflow
-
-AI tools are used for bounded implementation and independent review. Their local
-prompts, agent configuration, time estimates, and working notes are deliberately
-not published as solution documentation. Every public design claim must still be
-supported by code, tests, or repeatable runtime evidence.
-
-Only the candidate stages, commits, and pushes. AI implementation and review
-requests do not authorize Git history or remote changes.
-
-## Build (verified)
-
-```bash
-./mvnw --version           # wrapper Maven 3.9.16; build JDKs 17–26 accepted, bytecode targets release 17
-./mvnw test                # current scaffold suite: two application context tests
-./mvnw verify
-./mvnw -DskipTests package
-```
-
-Packaging produces, per service, a thin JAR (`account-service-<version>.jar`,
-`event-gateway-<version>.jar`) that stays usable as an in-reactor test
-dependency, plus the runnable Spring Boot archive attached with the `exec`
-classifier (`*-exec.jar`) for `java -jar` and, later, Docker. The real
-two-service integration suite does not exist yet; it is created and proven by
-the acceptance-test task.
+AI tools assisted with bounded implementation and independent review. Public
+claims are backed by code, tests, or a repeatable demo—not by unpublished
+prompts or private notes.

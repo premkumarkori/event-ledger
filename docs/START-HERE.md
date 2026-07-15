@@ -1,15 +1,13 @@
 # Event Ledger in plain English
 
-**Read this first.** Use this before the detailed specifications. It
-explains what we are building, why the design looks this way, and what must be
-proved. Current state: the Java 17 multi-module scaffold — two runnable Spring
-Boot applications with separate H2 configurations — is implemented and verified.
-Everything else described here (endpoints, persistence, resilience,
-observability, Docker) is the specified behavior still to be built.
+**Read this first.** It explains what the system does, why the design looks this
+way, and what the tests and demo prove. The system is implemented and verified:
+two Spring Boot services, separate H2 databases, HTTP APIs, resilience,
+observability, Docker Compose, and a real two-service acceptance suite.
 
-## 1. What are we building?
+## 1. What does this project do?
 
-We are building two small Java 17/Spring Boot applications.
+Two small Java 17/Spring Boot applications process financial transaction events.
 
 ```text
 Client
@@ -31,12 +29,12 @@ The two databases are deliberately separate. Gateway cannot read Account's
 tables. Account cannot read Gateway's tables. Production communication is HTTP
 only.
 
-Why H2 even though the services are Dockerized? The assignment asks for separate
-H2 databases, and file-backed H2 volumes already survive a normal container
-stop/start. PostgreSQL would be a reasonable production follow-up but adds setup,
-migrations, and different concurrency behavior to prove. SQLite adds JPA dialect
-and locking friction. Neither improves a required acceptance test,
-so the core stays with two file-backed H2 databases.
+Why H2 with Docker? The brief asks for separate H2 databases, and file-backed H2
+volumes already survive a normal container stop/start. PostgreSQL would be a
+reasonable production follow-up but adds setup, migrations, and different
+concurrency behavior to prove. SQLite adds JPA dialect and locking friction.
+Neither improves a required acceptance test, so the core stays with two
+file-backed H2 databases.
 
 ## 2. One normal request
 
@@ -203,13 +201,14 @@ Arrival order must not change the returned chronology.
 - Gateway health is based first on its own database. Account outage may make it
   `DEGRADED`; it should not automatically kill local Gateway reads.
 
-The HTTP client needs a finite timeout. The circuit breaker prevents repeated
-calls to a known-failing dependency. Automatic retry is optional bonus work and
-must not start until Account idempotency is proved.
+The HTTP client uses a finite timeout. The circuit breaker prevents repeated
+calls to a known-failing dependency. Automatic HTTP retry is deferred; same-ID
+client retry remains the recovery path for unconfirmed applies.
 
-## 10. What must the tests prove?
+## 10. What do the tests prove?
 
-The important tests are behavior proofs, not line-coverage decoration:
+The suite is behavior-focused, not line-coverage decoration. Root verification
+runs 431 tests. The important proofs include:
 
 1. invalid input writes nothing and calls nothing;
 2. identical replay creates one Gateway row and one Account effect;
@@ -239,5 +238,5 @@ H2 tests and the real two-service acceptance test.
    invalid cross-currency addition.
 5. A finite timeout and circuit breaker produce bounded, honest `503` behavior,
    while tracing/logs/metrics make the flow observable.
-6. Every guarantee maps to an automated test or repeatable demo, and optional
-   work is admitted only after the mandatory gates are green.
+6. Every guarantee maps to an automated test or the Compose demo; optional
+   extensions are listed honestly as implemented or deferred.

@@ -18,14 +18,12 @@ Core behavior includes:
 - a Resilience4j circuit breaker through Spring Cloud CircuitBreaker;
 - explicit classification so expected `4xx` does not trip the circuit;
 - one clear `503` mapping for timeout, connection, retryable `5xx`, and open circuit;
-- no automatic retry until the Account duplicate and concurrency tests pass.
+- no automatic HTTP retry in the core.
 
-Retry is enabled only after Account idempotency/concurrency, timeout/circuit, and
-real two-service tests pass. Start it only when there is enough remaining capacity
-to implement it, prove request counts and breaker accounting, and remove it if
-those proofs fail. Retry is bounded to two total attempts with exponential
-backoff/jitter. It never retries validation `4xx`, semantic `409`, `404`, or an
-open circuit in a loop.
+Automatic retry remains deferred. If admitted later, keep it to two total
+attempts with exponential backoff/jitter, never retry validation `4xx`, semantic
+`409`, `404`, or an open circuit in a loop, and prove request counts plus breaker
+accounting before keeping it.
 
 ## Why
 
