@@ -7,7 +7,8 @@ import com.eventledger.account.persistence.AccountEntity;
 import com.eventledger.account.persistence.AccountRepository;
 import com.eventledger.account.persistence.AccountTransactionEntity;
 import com.eventledger.account.persistence.AccountTransactionRepository;
-import org.springframework.stereotype.Component;
+import jakarta.persistence.EntityManager;
+import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,19 +16,22 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 
-@Component
+@Repository
 public class AccountTransactionWriter {
 
     private final AccountRepository accounts;
     private final AccountTransactionRepository transactions;
+    private final EntityManager entityManager;
     private final Clock clock;
 
     public AccountTransactionWriter(
             AccountRepository accounts,
             AccountTransactionRepository transactions,
+            EntityManager entityManager,
             Clock clock) {
         this.accounts = accounts;
         this.transactions = transactions;
+        this.entityManager = entityManager;
         this.clock = clock;
     }
 
@@ -41,9 +45,11 @@ public class AccountTransactionWriter {
 
         Instant appliedAt = clock.instant();
         createAccountOrCheckCurrency(transaction, appliedAt);
-        AccountTransactionEntity saved = transactions.saveAndFlush(
-                new AccountTransactionEntity(transaction, appliedAt));
-        return ApplyOutcome.createdFrom(saved);
+        AccountTransactionEntity newTransaction =
+                new AccountTransactionEntity(transaction, appliedAt);
+        entityManager.persist(newTransaction);
+        entityManager.flush();
+        return ApplyOutcome.createdFrom(newTransaction);
     }
 
     private ApplyOutcome replayOrThrowConflict(
@@ -62,7 +68,7 @@ public class AccountTransactionWriter {
             return;
         }
 
-        accounts.save(new AccountEntity(
+        entityManager.persist(new AccountEntity(
                 transaction.accountId(), transaction.currency(), createdAt));
     }
 
