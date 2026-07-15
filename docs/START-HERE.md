@@ -2,7 +2,10 @@
 
 **Read this first.** Use this before the detailed specifications. It
 explains what we are building, why the design looks this way, and what must be
-proved. It is not evidence that any code exists yet.
+proved. Current state: the Java 17 multi-module scaffold — two runnable Spring
+Boot applications with separate H2 configurations — is implemented and verified.
+Everything else described here (endpoints, persistence, resilience,
+observability, Docker) is the specified behavior still to be built.
 
 ## 1. What are we building?
 

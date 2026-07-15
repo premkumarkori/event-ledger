@@ -1,9 +1,8 @@
 # Architecture decisions
 
-These ADRs capture recommended decisions most likely to cause rework or reviewer
-questions. They describe the intended implementation; they do not claim code
-exists. During T-000, the candidate records approval or an explicit replacement
-before coding depends on them.
+These ADRs capture the decisions most likely to cause rework or reviewer
+questions. All nine were reviewed and accepted by the candidate at T-000
+(2026-07-14); implementation follows them unless a later ADR supersedes one.
 
 | ADR | Decision |
 |---|---|
@@ -19,6 +18,5 @@ before coding depends on them.
 
 Status meanings:
 
-- **Proposed**: reviewed recommendation awaiting candidate approval at T-000.
 - **Accepted**: candidate approved it; use it unless new evidence justifies a replacement.
 - **Superseded**: retain the ADR, link the replacement, and explain why it changed.

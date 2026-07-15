@@ -1,6 +1,6 @@
 # ADR-004: Persist-before-call Gateway lifecycle
 
-- Status: Proposed
+- Status: Accepted (candidate, 2026-07-14)
 - Date: 2026-07-14
 - Requirements: FR-011, FR-040 through FR-042
 

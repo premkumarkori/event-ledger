@@ -1,6 +1,6 @@
 # ADR-009: File-backed runtime H2, isolated in-memory test H2
 
-- Status: Proposed
+- Status: Accepted (candidate, 2026-07-14)
 - Date: 2026-07-14
 - Requirements: FR-002, NFR-035
 

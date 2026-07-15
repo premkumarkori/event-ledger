@@ -1,6 +1,6 @@
 # ADR-006: One currency per account in the core
 
-- Status: Proposed
+- Status: Accepted (candidate, 2026-07-14)
 - Date: 2026-07-14
 - Requirements: FR-032
 

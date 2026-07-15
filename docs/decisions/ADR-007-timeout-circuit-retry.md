@@ -1,6 +1,6 @@
 # ADR-007: Timeout and circuit breaker are core; retry is gated
 
-- Status: Proposed
+- Status: Accepted (candidate, 2026-07-14)
 - Date: 2026-07-14
 - Requirements: FR-041, FR-042, NFR-020 through NFR-022
 

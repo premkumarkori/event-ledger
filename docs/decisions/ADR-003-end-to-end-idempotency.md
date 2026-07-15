@@ -1,6 +1,6 @@
 # ADR-003: End-to-end, database-backed idempotency
 
-- Status: Proposed
+- Status: Accepted (candidate, 2026-07-14)
 - Date: 2026-07-14
 - Requirements: FR-020 through FR-024
 

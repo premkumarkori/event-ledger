@@ -1,6 +1,6 @@
 # ADR-002: Service and module boundaries
 
-- Status: Proposed
+- Status: Accepted (candidate, 2026-07-14)
 - Date: 2026-07-14
 - Requirements: FR-001, FR-002, FR-003
 

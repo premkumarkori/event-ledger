@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: event-gateway
+  datasource:
+    url: jdbc:h2:file:./runtime-data/gateway/event-gateway;AUTO_SERVER=FALSE
+    username: sa
+    password: ""
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+
+clients:
+  account:
+    base-url: http://localhost:8081

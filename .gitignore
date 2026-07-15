@@ -23,6 +23,7 @@ target/
 *.log
 
 # Embedded H2 runtime files (runtime/Compose data is never source)
+runtime-data/
 *.mv.db
 *.trace.db
 **/data/*.mv.db
