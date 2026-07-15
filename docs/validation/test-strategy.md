@@ -116,7 +116,9 @@ Names below are targets, not claims that files exist:
 
 ```text
 account-service/src/test/java/.../
-  TransactionApplicationServiceTest.java
+  AccountTransactionRequestValidatorTest.java
+  AccountTransactionServiceTest.java
+  AccountTransactionPersistenceIT.java
   AccountTransactionRepositoryIT.java
   AccountConcurrencyTest.java
   AccountQueryIT.java

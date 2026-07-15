@@ -80,6 +80,15 @@ paths:
                 detail: account acct-123 is established in USD and cannot accept EUR
                 instance: /accounts/acct-123/transactions
                 traceId: 4f2d9c4e1b7d3a5f8e0c2d4b6a8f1e3d
+        '500':
+          description: >
+            A bounded local collision recovery could not converge. No partial
+            account or transaction is committed, and the response contains no
+            database or exception details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/InternalProblemDetail'
   /accounts/{accountId}/balance:
     get:
       operationId: getAccountBalance
@@ -370,3 +379,15 @@ components:
             status:
               type: integer
               const: 409
+    InternalProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          required: [type, status]
+          properties:
+            type:
+              type: string
+              const: 'urn:event-ledger:problem:internal'
+            status:
+              type: integer
+              const: 500
