@@ -1,6 +1,6 @@
 # ADR-008: Trace, JSON log, metric, and health contracts
 
-- Status: Accepted (candidate, 2026-07-14)
+- Status: Accepted (2026-07-14)
 - Date: 2026-07-14
 - Requirements: NFR-010 through NFR-014
 

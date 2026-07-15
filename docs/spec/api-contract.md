@@ -119,7 +119,7 @@ For a terminal Account conflict, Gateway stores `APPLY_FAILED` with a terminal f
 
 ### `GET /events?account={accountId}`
 
-Core response is a JSON array to avoid spending time on invented pagination:
+The response is a JSON array; pagination is out of scope:
 
 ```json
 [
@@ -136,8 +136,8 @@ Required query parameter absent/blank -> `400`.
 
 ### `GET /accounts/{accountId}/balance`
 
-This required interpretation makes client balance-degradation behavior
-observable while Account remains an internal service.
+This endpoint keeps Account internal while making balance degradation
+observable to clients.
 
 - `200`: proxied Account balance.
 - `400`: invalid `accountId`.
@@ -180,6 +180,10 @@ The account comes from the path and is included in semantic idempotency comparis
 | `200 OK` | identical transaction already exists |
 | `400 Bad Request` | defensive input validation |
 | `409 Conflict` | same ID/different transaction or account-currency mismatch |
+| `500 Internal Server Error` | bounded local collision recovery did not converge (`urn:event-ledger:problem:internal`); retrying the same `eventId` is safe |
+
+The Gateway classifies any Account `5xx` as retryable-unconfirmed, so the public
+client sees this case as the Gateway `503`, never a raw Account `500`.
 
 Response:
 
@@ -263,11 +267,14 @@ Use Spring `ProblemDetail`:
   "type": "urn:event-ledger:problem:idempotency-conflict",
   "title": "Event identifier conflict",
   "status": 409,
-  "detail": "eventId evt-001 already belongs to a different event payload",
-  "instance": "/events",
-  "errors": []
+  "detail": "The eventId already belongs to a different event",
+  "instance": "/events"
 }
 ```
+
+Only validation problems carry an `errors` array. The write-path `503`
+additionally carries `eventId` and `applicationStatus` (section 2); no other
+problem type adds extension members.
 
 Stable types:
 

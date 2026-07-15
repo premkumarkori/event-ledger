@@ -1,4 +1,4 @@
-# Event Ledger in plain English
+# How Event Ledger works
 
 **Read this first.** It explains what the system does, why the design looks this
 way, and what the tests and demo prove. The system is implemented and verified:
@@ -29,8 +29,8 @@ The two databases are deliberately separate. Gateway cannot read Account's
 tables. Account cannot read Gateway's tables. Production communication is HTTP
 only.
 
-Why H2 with Docker? The brief asks for separate H2 databases, and file-backed H2
-volumes already survive a normal container stop/start. PostgreSQL would be a
+Why H2 with Docker? The project requires separate H2 databases, and file-backed
+H2 volumes already survive a normal container stop/start. PostgreSQL would be a
 reasonable production follow-up but adds setup, migrations, and different
 concurrency behavior to prove. SQLite adds JPA dialect and locking friction.
 Neither improves a required acceptance test, so the core stays with two
@@ -63,13 +63,13 @@ The happy path is:
 7. Gateway changes its row to `APPLIED` and returns `201` to the client.
 8. Account balance is `150.00 USD`.
 
-The phrase “save before call” matters. If Account is down, Gateway still has the
-event and Gateway read APIs can still return it.
+This persist-before-call order matters. If Account is down, Gateway still has
+the event and Gateway read APIs can still return it.
 
 ## 3. Why is `eventId` so important?
 
-`eventId` is the idempotency key. Think of it as the permanent identity of one
-business instruction.
+`eventId` is the idempotency key: the permanent identity of one business
+instruction.
 
 The same ID and the same normalized content means replay:
 
@@ -128,13 +128,15 @@ claiming exactly-once network delivery.
 
 `APPLY_FAILED` is not always terminal. Its failure code matters:
 
-- `RETRYABLE_UNCONFIRMED`: timeout, connection error, open circuit, selected 5xx;
+- `RETRYABLE_UNCONFIRMED`: timeout, connection error, open circuit, or an
+  Account `5xx` treated as infrastructure failure;
 - `TERMINAL_CONFLICT`: reused ID or account-currency conflict;
 - `CONTRACT_ERROR`: Account rejected an internal request or returned an invalid
   response; investigate instead of retrying blindly.
 
 A late failing thread must never overwrite `APPLIED`. The database status update
-therefore includes a condition such as `WHERE application_status <> 'APPLIED'`.
+is guarded with `WHERE application_status <> 'APPLIED'`, so a late failure
+update matches zero rows.
 
 ## 6. Why not keep a mutable balance row?
 
@@ -156,8 +158,8 @@ balance = SUM(credits) - SUM(debits)
 Two concurrent inserts cannot overwrite each other's amount. The primary key
 prevents the same event from being counted twice.
 
-This is not a complete double-entry accounting ledger. It is a small transaction
-journal and derived account balance. Say that honestly in a technical review.
+This is a transaction journal with a derived account balance, not a complete
+double-entry accounting ledger.
 
 ## 7. How does currency work?
 
@@ -197,7 +199,7 @@ Arrival order must not change the returned chronology.
   Account cannot confirm it.
 - `GET /events/{id}` still works from Gateway's database.
 - `GET /events?account=...` still works and remains ordered.
-- A selected balance proxy cannot work without Account, so it returns `503`.
+- The balance proxy cannot work without Account, so it returns `503`.
 - Gateway health is based first on its own database. Account outage may make it
   `DEGRADED`; it should not automatically kill local Gateway reads.
 
@@ -207,8 +209,8 @@ client retry remains the recovery path for unconfirmed applies.
 
 ## 10. What do the tests prove?
 
-The suite is behavior-focused, not line-coverage decoration. Root verification
-runs 431 tests. The important proofs include:
+The suite targets behavior rather than line coverage. Root verification runs
+431 tests. The important proofs include:
 
 1. invalid input writes nothing and calls nothing;
 2. identical replay creates one Gateway row and one Account effect;
@@ -226,7 +228,7 @@ WireMock is useful for controlled HTTP failures and request counts. It cannot
 prove that the real Account database has one row. That proof comes from Account
 H2 tests and the real two-service acceptance test.
 
-## 11. The design explanation in six sentences
+## 11. Design summary
 
 1. Gateway persists the normalized event before making the synchronous Account
    call, so local reads survive dependency failure.

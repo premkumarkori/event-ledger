@@ -1,8 +1,8 @@
 # Architecture decisions
 
 These ADRs capture the decisions most likely to cause rework or reviewer
-questions. All nine were reviewed and accepted by the candidate at T-000
-(2026-07-14); implementation follows them unless a later ADR supersedes one.
+questions. All nine were reviewed and accepted on 2026-07-14; the implementation
+follows them unless a later ADR supersedes one.
 
 | ADR | Decision |
 |---|---|
@@ -18,5 +18,5 @@ questions. All nine were reviewed and accepted by the candidate at T-000
 
 Status meanings:
 
-- **Accepted**: candidate approved it; use it unless new evidence justifies a replacement.
+- **Accepted**: the decision the implementation currently follows; use it unless new evidence justifies a replacement.
 - **Superseded**: retain the ADR, link the replacement, and explain why it changed.

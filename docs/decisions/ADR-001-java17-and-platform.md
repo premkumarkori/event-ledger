@@ -1,6 +1,6 @@
 # ADR-001: Java 17 and compatible platform
 
-- Status: Accepted (candidate, 2026-07-14)
+- Status: Accepted (2026-07-14)
 - Date: 2026-07-14
 - Requirements: CON-002, CON-004, NFR-030
 

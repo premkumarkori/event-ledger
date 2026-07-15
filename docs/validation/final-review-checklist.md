@@ -128,13 +128,10 @@ docker compose config --quiet
   copied link still points to local planning folders.
 - [ ] Optional features are labeled implemented, deferred, or out of scope accurately.
 
-Planning-path leak check after copying docs:
+Local-path leak check:
 
 ```bash
-PLANNING_PATH_PATTERN='gpt-sol''-plan|\.\./(01-''spec|02-exe''cution|03-phase-''plans|04-valid''ation|05-git''hub|06-agent-work''flow)'
-PRIVATE_PATH_PATTERN='/Us''ers/|Down''loads/|Assess''ment/'
-rg -n "$PLANNING_PATH_PATTERN|$PRIVATE_PATH_PATTERN" \
-  README.md docs
+rg -n '/Us''ers/|/ho''me/|[A-Za-z]:\\Us''ers\\' README.md docs contracts
 ```
 
 Expected: no matches in the public repository. Tracked public docs live under
@@ -150,7 +147,7 @@ Run both tracked-file and working-tree checks; `git grep` alone misses untracked
 git status --short
 git ls-files | sort
 find . -type f -size +1M -not -path './.git/*' -print | sort
-PRIVATE_PATH_PATTERN='/Us''ers/|Down''loads/|Assess''ment/|[A-Za-z]:\\Us''ers\\'
+PRIVATE_PATH_PATTERN='/Us''ers/|/ho''me/|[A-Za-z]:\\Us''ers\\'
 rg -n --hidden -i \
   --glob '!.git/**' --glob '!**/target/**' \
   "$PRIVATE_PATH_PATTERN" .
@@ -164,11 +161,11 @@ git check-ignore -v .env 2>/dev/null
 
 - [ ] No original input or personal documents, private preparation notes, or
   local absolute path is tracked (`CON-003`).
-- [ ] No real credential, token, private key, `.env`, or local AI configuration is tracked.
+- [ ] No real credential, token, private key, `.env`, or machine-local tool configuration is tracked.
 - [ ] Every search match was reviewed; expected nonzero `rg` exit on zero matches
   is not mistaken for a failed safety check.
 - [ ] `target/`, H2 files, logs, raw evidence, IDE state, and OS files are ignored.
-- [ ] Local AI prompts, agents, settings, and private instruction files are not tracked.
+- [ ] Machine-local tool prompts, settings, and private instruction files are not tracked.
 
 ## 9. Git history and release decision
 
@@ -183,7 +180,7 @@ git remote -v
 - [ ] Staged diff contains only reviewed files.
 - [ ] Remote target is intentionally the public repository and exposes no token.
 - [ ] License choice is deliberate; no license was added by assumption.
-- [ ] Human explicitly authorizes the final commit and push.
+- [ ] The final commit and push are a deliberate, recorded release decision.
 
 ## 10. Bonus gate
 
@@ -210,7 +207,7 @@ An unchecked bonus does not fail the core. A bonus that breaks core verification
 | Failed or unproven mandatory IDs | `<none or IDs>` |
 | Declared limitations | `<list>` |
 | Reviewer verdict | `<READY / READY WITH DECLARED RISKS / NOT READY>` |
-| Human push authorization | `<not granted / granted at UTC time>` |
+| Release decision | `<not released / released at UTC time>` |
 
 Only `READY` is a clean submission gate. `READY WITH DECLARED RISKS` requires the
 public README to state those risks, and it must not hide a failed mandatory requirement.

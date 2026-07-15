@@ -1,6 +1,6 @@
 # ADR-005: Immutable journal and derived balance
 
-- Status: Accepted (candidate, 2026-07-14)
+- Status: Accepted (2026-07-14)
 - Date: 2026-07-14
 - Requirements: FR-030, FR-031, FR-033
 

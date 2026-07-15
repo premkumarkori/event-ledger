@@ -110,39 +110,52 @@ When `NFR-035` remains selected, the runtime demo also proves its narrow claim:
 `stop` then `start` with the same Account volume retains a committed row. It does
 not prove production durability, replication, failover, or restore.
 
-## 4. Proposed test organization
+## 4. Test organization
 
-Names below are targets, not claims that files exist:
+The current suite:
 
 ```text
-account-service/src/test/java/.../
-  AccountTransactionRequestValidatorTest.java
-  AccountTransactionServiceTest.java
+account-service/src/test/java/com/eventledger/account/
+  AccountConcurrencyTest.java
+  AccountControllerIT.java
+  AccountExceptionHandlerTest.java
+  AccountQueryIT.java
+  AccountServiceApplicationTest.java
   AccountTransactionPersistenceIT.java
   AccountTransactionRepositoryIT.java
-  AccountConcurrencyTest.java
-  AccountQueryIT.java
-  AccountControllerIT.java
-  TraceReceptionIT.java
+  AccountTransactionRequestValidatorTest.java
+  AccountTransactionServiceTest.java
+  observability/AccountHealthIT.java
+  observability/AccountStructuredLoggingIT.java
 
-event-gateway/src/test/java/.../
+event-gateway/src/test/java/com/eventledger/gateway/
+  AccountBalanceProxyIT.java
+  EventApplicationServiceIT.java
+  EventGatewayApplicationTest.java
+  EventIdempotencyTest.java
+  EventQueryTest.java
   EventRequestValidationTest.java
   EventSemanticEqualityTest.java
-  GatewayEventRepositoryIT.java
-  EventApplicationServiceIT.java
-  EventIdempotencyTest.java
   GatewayConcurrencyTest.java
-  EventControllerIT.java
-  AccountHttpTimeoutIT.java
-  CircuitBreakerTest.java
-  TracePropagationIT.java
-  GatewayStructuredLoggingIT.java
-  GatewayHealthIT.java
-  EventOutcomeMetricsTest.java
+  GatewayEventRepositoryIT.java
+  observability/AccountDependencyStateTest.java
+  observability/EventOutcomeMetricsTest.java
+  observability/GatewayHealthIT.java
+  observability/GatewayStructuredLoggingIT.java
+  observability/PrometheusExpositionIT.java
+  resilience/AccountHttpConnectionRefusalIT.java
+  resilience/AccountHttpTimeoutIT.java
+  resilience/CircuitBreakerTest.java
+  resilience/TracePropagationIT.java
 
-integration-tests/src/test/java/.../
+integration-tests/src/test/java/com/eventledger/integration/
   EventLedgerAcceptanceTest.java
 ```
+
+Trace reception on the Account side is asserted by
+`observability/AccountStructuredLoggingIT.java` (the incoming trace ID appears in
+Account's structured log line), and Gateway HTTP behavior is covered by the
+endpoint-focused classes above rather than one monolithic controller test.
 
 Service modules configure Surefire to include their local `*Test` and `*IT`
 classes. The integration module names the required cross-service class

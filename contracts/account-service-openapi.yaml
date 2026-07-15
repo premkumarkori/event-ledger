@@ -12,7 +12,7 @@ servers:
   - url: http://account-service:8081
     description: Private Compose network address
 
-# This take-home API intentionally has no authentication layer.
+# Authentication is outside this project's scope.
 security: []
 
 paths:

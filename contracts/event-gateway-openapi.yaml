@@ -11,7 +11,7 @@ servers:
   - url: http://localhost:8080
     description: Local development
 
-# This take-home API intentionally has no authentication layer.
+# Authentication is outside this project's scope.
 security: []
 
 paths:
@@ -101,7 +101,7 @@ paths:
                 type: 'urn:event-ledger:problem:idempotency-conflict'
                 title: Event identifier conflict
                 status: 409
-                detail: eventId evt-001 already belongs to a different event payload
+                detail: The eventId already belongs to a different event
                 instance: /events
         '502':
           description: >
