@@ -153,7 +153,7 @@ class EventApplicationServiceIT {
     @Autowired
     private JsonMapper jsonMapper;
 
-    private final HttpClient http = HttpClient.newBuilder()
+    private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
@@ -196,7 +196,7 @@ class EventApplicationServiceIT {
                 .timeout(Duration.ofSeconds(5))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+        return HTTP.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> get(String path) throws Exception {
@@ -204,7 +204,7 @@ class EventApplicationServiceIT {
                 .timeout(Duration.ofSeconds(5))
                 .GET()
                 .build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+        return HTTP.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private JsonNode json(String body) {

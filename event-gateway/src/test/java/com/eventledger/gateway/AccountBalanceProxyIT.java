@@ -58,7 +58,7 @@ class AccountBalanceProxyIT {
     @Autowired
     private JsonMapper jsonMapper;
 
-    private final HttpClient http = HttpClient.newBuilder()
+    private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
@@ -231,6 +231,6 @@ class AccountBalanceProxyIT {
                 .timeout(Duration.ofSeconds(5))
                 .GET()
                 .build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+        return HTTP.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }

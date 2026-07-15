@@ -99,7 +99,7 @@ class EventIdempotencyTest {
     @Autowired
     private JsonMapper jsonMapper;
 
-    private final HttpClient http = HttpClient.newBuilder()
+    private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
@@ -455,6 +455,6 @@ class EventIdempotencyTest {
                 .timeout(Duration.ofSeconds(5))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+        return HTTP.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }

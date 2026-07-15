@@ -88,7 +88,7 @@ class EventRequestValidationTest {
     @Autowired
     private JsonMapper jsonMapper;
 
-    private final HttpClient http = HttpClient.newBuilder()
+    private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
@@ -247,6 +247,40 @@ class EventRequestValidationTest {
     }
 
     @Test
+    void submitEvent_shouldReturn201_whenIdentifiersHaveMaximumLength() throws Exception {
+        String eventId = "e".repeat(128);
+        String accountId = "a".repeat(128);
+        stubAccountApplied(eventId, accountId);
+
+        HttpResponse<String> response = submit("""
+                {"eventId":"%s","accountId":"%s","type":"CREDIT","amount":150.00,
+                 "currency":"USD","eventTimestamp":"2026-05-15T14:02:11Z","metadata":{}}"""
+                .formatted(eventId, accountId));
+
+        assertThat(response.statusCode()).isEqualTo(201);
+        assertThat(events.existsById(eventId)).isTrue();
+        assertThat(anyAccountRequestCount()).isEqualTo(1);
+    }
+
+    @ParameterizedTest(name = "field={0}")
+    @ValueSource(strings = {"eventId", "accountId"})
+    void submitEvent_shouldReturn400WithoutSideEffects_whenIdentifierExceedsMaximumLength(String field)
+            throws Exception {
+        String tooLong = "x".repeat(129);
+        String eventId = "eventId".equals(field) ? tooLong : "evt-1";
+        String accountId = "accountId".equals(field) ? tooLong : "acct-1";
+
+        HttpResponse<String> response = submit("""
+                {"eventId":"%s","accountId":"%s","type":"CREDIT","amount":150.00,
+                 "currency":"USD","eventTimestamp":"2026-05-15T14:02:11Z","metadata":{}}"""
+                .formatted(eventId, accountId));
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(fieldNames(json(response.body()))).containsExactly(field);
+        assertNoWriteOrCall();
+    }
+
+    @Test
     void submitEvent_shouldReturn400ProblemDetailNamingField_whenBeanValidationFails() throws Exception {
         HttpResponse<String> response = submit("""
                 {"eventId":"","accountId":"acct-1","type":"CREDIT","amount":150.00,
@@ -326,22 +360,31 @@ class EventRequestValidationTest {
 
     private void assertNoWriteOrCall() {
         assertThat(events.count()).isZero();
-        assertThat(accountRequestCount()).isZero();
+        assertThat(anyAccountRequestCount()).isZero();
     }
 
     private void stubAccountApplied() {
-        account.stubFor(post(urlEqualTo(ACCOUNT_PATH)).willReturn(aResponse()
+        stubAccountApplied("evt-1", "acct-1");
+    }
+
+    private void stubAccountApplied(String eventId, String accountId) {
+        String accountPath = "/accounts/" + accountId + "/transactions";
+        account.stubFor(post(urlEqualTo(accountPath)).willReturn(aResponse()
                 .withStatus(201)
                 .withHeader("Content-Type", "application/json")
                 .withBody("""
-                        {"eventId":"evt-1","accountId":"acct-1","type":"CREDIT","amount":150.00,
+                        {"eventId":"%s","accountId":"%s","type":"CREDIT","amount":150.00,
                          "currency":"USD","eventTimestamp":"%s","appliedAt":"%s"}"""
-                        .formatted(EVENT_TIME, ACCOUNT_APPLIED_AT))));
+                        .formatted(eventId, accountId, EVENT_TIME, ACCOUNT_APPLIED_AT))));
     }
 
     private int accountRequestCount() {
         return account.countRequestsMatching(postRequestedFor(urlEqualTo(ACCOUNT_PATH)).build())
                 .getCount();
+    }
+
+    private int anyAccountRequestCount() {
+        return account.getAllServeEvents().size();
     }
 
     private List<String> fieldNames(JsonNode problem) {
@@ -357,6 +400,6 @@ class EventRequestValidationTest {
                 .timeout(Duration.ofSeconds(5))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+        return HTTP.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }

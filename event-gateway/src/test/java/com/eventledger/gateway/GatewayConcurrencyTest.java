@@ -150,7 +150,7 @@ class GatewayConcurrencyTest {
     @Autowired
     private LateFailureCoordinator coordinator;
 
-    private final HttpClient http = HttpClient.newBuilder()
+    private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
@@ -248,6 +248,6 @@ class GatewayConcurrencyTest {
                 .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+        return HTTP.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }
